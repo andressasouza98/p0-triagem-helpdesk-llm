@@ -1,0 +1,46 @@
+# ==========================================
+# 1. SEGURANÇA E PRIVACIDADE (NUNCA COMMITAR)
+# ==========================================
+.env
+.env.local
+*.pem
+*.key
+
+# ==========================================
+# 2. AMBIENTE VIRTUAL PYTHON
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+
+# ==========================================
+# 3. BYTECODE E CACHES DE EXECUÇÃO
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==========================================
+# 4. LOGS E TELEMETRIA
+# Ignora arquivos de log, mas preserva a pasta
+# ==========================================
+logs/*.log
+*.log
+
+# ==========================================
+# 5. CONFIGURAÇÕES LOCAIS DE IDES
+# ==========================================
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# ==========================================
+# 6. ARQUIVOS TEMPORÁRIOS DE SISTEMA (WINDOWS/MAC)
+# ==========================================
+Thumbs.db
+Desktop.ini
+.DS_Store
