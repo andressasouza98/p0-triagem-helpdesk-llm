@@ -1,0 +1,7 @@
+# Dependências de Execução (Runtime)
+requests==2.31.0
+python-dotenv==1.0.1
+
+# Dependências de Testes Offline (Unit Testing)
+pytest==8.1.1
+requests-mock==1.12.1
