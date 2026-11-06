@@ -1,88 +1,21 @@
 """
 Interface de Linha de Comando (CLI) - Triagem de Incidentes de Help Desk.
 
-Projeto P0 - Nível Intermediário.
+Projeto P0 - Primeiro Fluxo com LLM (Nível Intermediário).
 
 Responsabilidades:
-- Entrada e validação dos relatos dos usuários.
-- Construção do prompt especializado de Help Desk.
-- Preparação das configurações da API Gemini.
-- Integração com o módulo client.py.
-- Apresentação dos resultados da triagem.
+- Receber os relatos dos usuários.
+- Validar as entradas.
+- Construir o prompt de triagem.
+- Acionar o cliente de integração com LLM.
+- Apresentar o resultado da classificação.
 """
 
-import os
 import sys
-from pathlib import Path
-
-from dotenv import load_dotenv
 
 
 # ==========================================================
-# 1. CONFIGURAÇÃO DO AMBIENTE
-# ==========================================================
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-ENV_PATH = BASE_DIR / ".env"
-
-# Carrega as variáveis de ambiente antes de importar o cliente.
-load_dotenv(dotenv_path=ENV_PATH)
-
-
-# ==========================================================
-# 2. CONFIGURAÇÃO DO ENDPOINT GEMINI
-# ==========================================================
-
-def preparar_configuracao_api() -> str:
-    """
-    Verifica e prepara as configurações necessárias
-    para a comunicação com a API Gemini.
-
-    Caso LLM_API_URL não esteja definida no .env,
-    constrói automaticamente o endpoint utilizando
-    o modelo e a versão da API configurados.
-    """
-
-    model_name = os.getenv(
-        "LLM_MODEL_NAME",
-        "gemini-3.5-flash-lite"
-    ).strip()
-
-    api_version = os.getenv(
-        "LLM_API_VERSION",
-        "v1beta"
-    ).strip()
-
-    if not model_name:
-        raise ValueError(
-            "A variável LLM_MODEL_NAME não está definida."
-        )
-
-    if api_version not in ("v1", "v1beta"):
-        raise ValueError(
-            "Versão da API inválida. Utilize v1 ou v1beta."
-        )
-
-    # Remove o prefixo models/ caso esteja presente.
-    model_name = model_name.removeprefix("models/")
-
-    # Constrói o endpoint correspondente ao modelo.
-    endpoint = (
-        "https://generativelanguage.googleapis.com/"
-        f"{api_version}/models/"
-        f"{model_name}:generateContent"
-    )
-
-    # Disponibiliza a variável para o módulo client.py.
-    # Isso evita o erro de LLM_API_URL não definida.
-    os.environ["LLM_API_URL"] = endpoint
-
-    return endpoint
-
-
-# ==========================================================
-# 3. CONSTRUÇÃO DO PROMPT DE TRIAGEM
+# 1. CONSTRUÇÃO DO PROMPT DE TRIAGEM
 # ==========================================================
 
 def construir_prompt_triagem(relato_usuario: str) -> str:
@@ -144,22 +77,25 @@ FIM DO RELATO.
 
 
 # ==========================================================
-# 4. VALIDAÇÃO DO RELATO DO USUÁRIO
+# 2. VALIDAÇÃO DA ENTRADA DO USUÁRIO
 # ==========================================================
 
 def validar_relato(relato: str) -> bool:
     """
-    Valida se o relato possui conteúdo suficiente
-    para realizar a classificação do incidente.
+    Valida se o relato do usuário não está vazio,
+    não contém apenas espaços e possui o tamanho mínimo.
     """
 
-    if not relato:
+    # Verifica entradas vazias ou contendo apenas espaços.
+    if not relato.strip():
         print(
-            "\n[AVISO]: Nenhum relato foi informado."
+            "\n[AVISO]: O relato não pode estar vazio. "
+            "Digite uma descrição do incidente."
         )
         return False
 
-    if len(relato) < 10:
+    # Verifica o tamanho mínimo do relato.
+    if len(relato.strip()) < 10:
         print(
             "\n[AVISO]: Informe um relato detalhado "
             "com pelo menos 10 caracteres."
@@ -170,7 +106,7 @@ def validar_relato(relato: str) -> bool:
 
 
 # ==========================================================
-# 5. EXECUÇÃO DA INTERFACE CLI
+# 3. EXECUÇÃO DA INTERFACE CLI
 # ==========================================================
 
 def executar_cli():
@@ -178,11 +114,11 @@ def executar_cli():
     Orquestra a interação com o usuário no terminal.
 
     Fluxo:
-    1. Prepara as configurações.
-    2. Importa o cliente da API.
-    3. Recebe o relato.
+    1. Apresenta a interface.
+    2. Recebe o relato.
+    3. Valida a entrada.
     4. Constrói o prompt.
-    5. Envia a solicitação ao Gemini.
+    5. Invoca o cliente LLM.
     6. Apresenta o resultado.
     """
 
@@ -216,48 +152,25 @@ def executar_cli():
     try:
 
         # --------------------------------------------------
-        # ETAPA 1: PREPARAÇÃO DA CONFIGURAÇÃO
-        # --------------------------------------------------
-
-        endpoint = preparar_configuracao_api()
-
-        model_name = os.getenv(
-            "LLM_MODEL_NAME",
-            "gemini-3.5-flash-lite"
-        )
-
-        print(
-            f"\nModelo configurado: {model_name}"
-        )
-
-        print(
-            "Configuração da API preparada com sucesso."
-        )
-
-        # --------------------------------------------------
-        # ETAPA 2: IMPORTAÇÃO DO CLIENTE
-        # --------------------------------------------------
-
-        # Importação realizada após carregar as configurações.
-        from src.client import enviar_prompt_llm
-
-        # --------------------------------------------------
-        # ETAPA 3: ENTRADA DO USUÁRIO
+        # ETAPA 1: ENTRADA DO USUÁRIO
         # --------------------------------------------------
 
         relato = input(
-            "\nCole ou digite o relato do incidente:\n> "
-        ).strip()
+            "Cole ou digite o relato do incidente:\n> "
+        )
 
         # --------------------------------------------------
-        # ETAPA 4: VALIDAÇÃO
+        # ETAPA 2: VALIDAÇÃO DA ENTRADA
         # --------------------------------------------------
 
         if not validar_relato(relato):
             return
 
+        # Remove espaços desnecessários antes e depois do texto.
+        relato = relato.strip()
+
         # --------------------------------------------------
-        # ETAPA 5: CONSTRUÇÃO DO PROMPT
+        # ETAPA 3: CONSTRUÇÃO DO PROMPT
         # --------------------------------------------------
 
         prompt = construir_prompt_triagem(relato)
@@ -268,13 +181,18 @@ def executar_cli():
         )
 
         # --------------------------------------------------
-        # ETAPA 6: CHAMADA AO CLIENTE GEMINI
+        # ETAPA 4: IMPORTAÇÃO E CHAMADA DO CLIENTE
         # --------------------------------------------------
+
+        # O cliente somente é importado após a validação.
+        # Assim, entradas inválidas não acionam a integração.
+
+        from src.client import enviar_prompt_llm
 
         resultado = enviar_prompt_llm(prompt)
 
         # --------------------------------------------------
-        # ETAPA 7: APRESENTAÇÃO DO RESULTADO
+        # ETAPA 5: APRESENTAÇÃO DO RESULTADO
         # --------------------------------------------------
 
         print("\n" + "=" * 58)
@@ -298,12 +216,6 @@ def executar_cli():
 
         sys.exit(0)
 
-    except ValueError as erro:
-
-        print(
-            f"\n[ERRO DE CONFIGURAÇÃO]: {erro}"
-        )
-
     except ImportError as erro:
 
         print(
@@ -311,9 +223,7 @@ def executar_cli():
             "Não foi possível carregar o módulo client.py."
         )
 
-        print(
-            f"Detalhes: {erro}"
-        )
+        print(f"Detalhes: {erro}")
 
     except Exception as erro:
 
@@ -324,7 +234,7 @@ def executar_cli():
 
 
 # ==========================================================
-# 6. FUNÇÃO PRINCIPAL
+# 4. FUNÇÃO PRINCIPAL
 # ==========================================================
 
 def main():
@@ -336,7 +246,7 @@ def main():
 
 
 # ==========================================================
-# 7. EXECUÇÃO DO PROGRAMA
+# 5. EXECUÇÃO DO PROGRAMA
 # ==========================================================
 
 if __name__ == "__main__":

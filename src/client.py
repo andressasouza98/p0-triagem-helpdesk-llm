@@ -4,12 +4,12 @@ Módulo Cliente de Integração com LLM (Google Gemini REST API).
 Projeto P0 - Primeiro Fluxo com LLM (Nível Intermediário).
 
 Responsabilidades:
-- Carregar configurações do ambiente.
+- Carregar as configurações do ambiente.
 - Construir o endpoint da API Gemini.
 - Configurar a autenticação.
 - Formatar as requisições HTTP.
 - Processar as respostas do modelo.
-- Tratar erros de configuração, autenticação e comunicação.
+- Tratar erros de conexão e comunicação.
 """
 
 import os
@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 ENV_PATH = BASE_DIR / ".env"
 
-# Carrega as variáveis de ambiente do projeto.
+# Carrega as variáveis do arquivo .env.
 load_dotenv(dotenv_path=ENV_PATH)
 
 
@@ -39,11 +39,11 @@ def carregar_configuracoes() -> dict:
     """
     Carrega e valida as configurações necessárias
     para realizar chamadas à API Gemini.
-
-    Retorna um dicionário com os parâmetros operacionais.
     """
 
-    api_key = os.getenv("LLM_API_KEY", "").strip()
+    api_key = os.getenv(
+        "LLM_API_KEY", ""
+    ).strip()
 
     model_name = os.getenv(
         "LLM_MODEL_NAME",
@@ -55,21 +55,11 @@ def carregar_configuracoes() -> dict:
         "v1beta"
     ).strip()
 
-    api_url = os.getenv(
-        "LLM_API_URL",
-        ""
-    ).strip()
-
-    # Carregamento dos parâmetros numéricos.
-
+    # Carrega o limite de tokens.
     try:
 
         max_tokens = int(
             os.getenv("LLM_MAX_TOKENS", "500")
-        )
-
-        timeout = float(
-            os.getenv("LLM_TIMEOUT", "60")
         )
 
     except ValueError:
@@ -78,12 +68,12 @@ def carregar_configuracoes() -> dict:
             "valido": False,
             "erro": (
                 "[ERRO DE CONFIGURAÇÃO]: "
-                "Os parâmetros numéricos do .env são inválidos."
+                "LLM_MAX_TOKENS precisa ser um número inteiro."
             )
         }
 
     # ------------------------------------------------------
-    # VALIDAÇÃO DA CHAVE
+    # VALIDAÇÃO DA CHAVE DE API
     # ------------------------------------------------------
 
     if not api_key:
@@ -92,7 +82,7 @@ def carregar_configuracoes() -> dict:
             "valido": False,
             "erro": (
                 "[ERRO DE CONFIGURAÇÃO]: "
-                "A variável LLM_API_KEY não foi encontrada.\n"
+                "A variável 'LLM_API_KEY' não foi encontrada.\n"
                 "Verifique o arquivo .env."
             )
         }
@@ -107,9 +97,16 @@ def carregar_configuracoes() -> dict:
             "valido": False,
             "erro": (
                 "[ERRO DE CONFIGURAÇÃO]: "
-                "A variável LLM_MODEL_NAME não foi definida."
+                "A variável 'LLM_MODEL_NAME' não está definida."
             )
         }
+
+    # Remove o prefixo models/ caso esteja presente.
+    model_name = model_name.removeprefix("models/")
+
+    # ------------------------------------------------------
+    # VALIDAÇÃO DA VERSÃO DA API
+    # ------------------------------------------------------
 
     if api_version not in ("v1", "v1beta"):
 
@@ -117,9 +114,14 @@ def carregar_configuracoes() -> dict:
             "valido": False,
             "erro": (
                 "[ERRO DE CONFIGURAÇÃO]: "
-                "Versão da API inválida. Utilize v1 ou v1beta."
+                "Versão da API inválida. "
+                "Utilize v1 ou v1beta."
             )
         }
+
+    # ------------------------------------------------------
+    # VALIDAÇÃO DO LIMITE DE TOKENS
+    # ------------------------------------------------------
 
     if max_tokens <= 0:
 
@@ -131,66 +133,18 @@ def carregar_configuracoes() -> dict:
             )
         }
 
-    if timeout <= 0:
-
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "LLM_TIMEOUT precisa ser maior que zero."
-            )
-        }
-
     # ------------------------------------------------------
     # CONSTRUÇÃO DO ENDPOINT
     # ------------------------------------------------------
 
-    model_name = model_name.removeprefix("models/")
-
-    if api_url:
-
-        # Aceita uma URL completa ou uma URL-base configurada.
-
-        if not api_url.startswith(
-            "https://generativelanguage.googleapis.com/"
-        ):
-
-            return {
-                "valido": False,
-                "erro": (
-                    "[ERRO DE CONFIGURAÇÃO]: "
-                    "LLM_API_URL não corresponde ao endpoint "
-                    "oficial da API Gemini."
-                )
-            }
-
-        if api_url.endswith(":generateContent"):
-
-            endpoint = api_url
-
-        elif "/models/" in api_url:
-
-            endpoint = f"{api_url.rstrip('/')}:generateContent"
-
-        else:
-
-            endpoint = (
-                f"{api_url.rstrip('/')}/models/"
-                f"{model_name}:generateContent"
-            )
-
-    else:
-
-        # Constrói automaticamente o endpoint oficial.
-
-        endpoint = (
-            "https://generativelanguage.googleapis.com/"
-            f"{api_version}/models/"
-            f"{model_name}:generateContent"
-        )
+    endpoint = (
+        "https://generativelanguage.googleapis.com/"
+        f"{api_version}/models/"
+        f"{model_name}:generateContent"
+    )
 
     # ------------------------------------------------------
-    # CONFIGURAÇÕES VALIDADAS
+    # RETORNO DAS CONFIGURAÇÕES
     # ------------------------------------------------------
 
     return {
@@ -199,7 +153,6 @@ def carregar_configuracoes() -> dict:
         "model_name": model_name,
         "endpoint": endpoint,
         "max_tokens": max_tokens,
-        "timeout": timeout,
     }
 
 
@@ -211,8 +164,6 @@ def obter_cabecalhos(config: dict) -> dict:
     """
     Configura os cabeçalhos HTTP para autenticação
     na API Gemini.
-
-    A API REST nativa utiliza x-goog-api-key.
     """
 
     return {
@@ -222,7 +173,7 @@ def obter_cabecalhos(config: dict) -> dict:
 
 
 # ==========================================================
-# 4. TRATAMENTO DE ERROS DA API
+# 4. TRATAMENTO DOS ERROS DA API
 # ==========================================================
 
 def diagnosticar_erro_api(response: requests.Response) -> str:
@@ -267,12 +218,8 @@ def diagnosticar_erro_api(response: requests.Response) -> str:
 
         return (
             "[ERRO HTTP 401 - AUTENTICAÇÃO]\n"
-            "A credencial enviada não foi aceita pelo Google.\n\n"
-            "Verifique:\n"
-            "1. Se a chave foi criada no Google AI Studio.\n"
-            "2. Se a chave está ativa.\n"
-            "3. Se a variável LLM_API_KEY está correta.\n"
-            "4. Se a chave possui autorização para a API Gemini.\n\n"
+            "A credencial enviada não foi aceita pelo Google.\n"
+            "Verifique a chave configurada em LLM_API_KEY.\n\n"
             f"Detalhes do Google: {mensagem}"
         )
 
@@ -286,8 +233,7 @@ def diagnosticar_erro_api(response: requests.Response) -> str:
             "[ERRO HTTP 403 - ACESSO NEGADO]\n"
             "A requisição foi recebida, mas o acesso "
             "ao recurso foi negado.\n"
-            "Verifique as permissões da credencial "
-            "e a configuração do projeto Google.\n\n"
+            "Verifique as permissões da chave e do projeto Google.\n\n"
             f"Detalhes do Google: {mensagem}"
         )
 
@@ -402,10 +348,11 @@ def enviar_prompt_llm(prompt: str) -> str:
 
     Responsabilidades:
     - Validar as configurações.
-    - Criar a requisição HTTP.
+    - Configurar a autenticação.
+    - Construir a requisição HTTP.
     - Enviar a solicitação ao modelo.
-    - Processar o resultado.
-    - Tratar falhas de comunicação.
+    - Extrair a resposta.
+    - Tratar erros de comunicação.
     """
 
     # ------------------------------------------------------
@@ -429,27 +376,32 @@ def enviar_prompt_llm(prompt: str) -> str:
         )
 
     # ------------------------------------------------------
-    # CABEÇALHOS
+    # CABEÇALHOS DE AUTENTICAÇÃO
     # ------------------------------------------------------
 
     headers = obter_cabecalhos(config)
 
     # ------------------------------------------------------
-    # CORPO DA REQUISIÇÃO
+    # CONSTRUÇÃO DO PAYLOAD
     # ------------------------------------------------------
 
     payload = {
 
         "contents": [
+
             {
                 "role": "user",
 
                 "parts": [
+
                     {
                         "text": prompt
                     }
+
                 ]
+
             }
+
         ],
 
         "generationConfig": {
@@ -461,27 +413,19 @@ def enviar_prompt_llm(prompt: str) -> str:
     }
 
     # ------------------------------------------------------
-    # ENVIO DA REQUISIÇÃO
+    # ENVIO DA REQUISIÇÃO HTTP
     # ------------------------------------------------------
 
     try:
 
         response = requests.post(
-
             config["endpoint"],
-
             headers=headers,
-
             json=payload,
-
-            timeout=(10, config["timeout"])
-
+            timeout=10
         )
 
-        # --------------------------------------------------
-        # VERIFICAÇÃO DO STATUS HTTP
-        # --------------------------------------------------
-
+        # Verifica se a API retornou algum erro HTTP.
         if not response.ok:
 
             return diagnosticar_erro_api(response)
@@ -514,14 +458,12 @@ def enviar_prompt_llm(prompt: str) -> str:
     except requests.exceptions.Timeout:
 
         return (
-            "[ERRO DE CONEXÃO]: O servidor excedeu "
-            f"o tempo limite de resposta "
-            f"({config['timeout']} segundos).\n"
-            "Verifique a conexão ou aumente LLM_TIMEOUT."
+            "Erro de conexão: "
+            "O serviço do LLM demorou muito para responder."
         )
 
     # ------------------------------------------------------
-    # TRATAMENTO DE CONEXÃO
+    # TRATAMENTO DE ERRO DE CONEXÃO
     # ------------------------------------------------------
 
     except requests.exceptions.ConnectionError:
@@ -529,11 +471,11 @@ def enviar_prompt_llm(prompt: str) -> str:
         return (
             "[ERRO DE REDE]: Não foi possível estabelecer "
             "conexão com o servidor Gemini.\n"
-            "Verifique sua internet e a resolução de DNS."
+            "Verifique sua conexão com a internet."
         )
 
     # ------------------------------------------------------
-    # OUTROS ERROS HTTP
+    # TRATAMENTO DE OUTROS ERROS HTTP
     # ------------------------------------------------------
 
     except requests.exceptions.RequestException as erro:
@@ -544,7 +486,7 @@ def enviar_prompt_llm(prompt: str) -> str:
         )
 
     # ------------------------------------------------------
-    # ERROS INESPERADOS
+    # TRATAMENTO DE ERROS INESPERADOS
     # ------------------------------------------------------
 
     except Exception as erro:
