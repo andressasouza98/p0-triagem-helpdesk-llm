@@ -1,18 +1,20 @@
 """
-Módulo Cliente de Integração com LLM (Google Gemini REST API).
+Módulo Cliente - Integração Resiliente com a API Google Gemini REST.
 
 Projeto P0 - Primeiro Fluxo com LLM (Nível Intermediário).
 
 Responsabilidades:
-- Carregar as configurações do ambiente.
+- Carregar configurações do ambiente.
 - Construir o endpoint da API Gemini.
-- Configurar a autenticação.
-- Formatar as requisições HTTP.
-- Processar as respostas do modelo.
-- Tratar erros de conexão e comunicação.
+- Configurar autenticação.
+- Formatar requisições HTTP.
+- Processar respostas do modelo.
+- Tratar erros de configuração, rede e API.
+- Evitar propagação de tracebacks para a interface CLI.
 """
 
 import os
+import math
 from pathlib import Path
 
 import requests
@@ -23,11 +25,13 @@ from dotenv import load_dotenv
 # 1. CONFIGURAÇÃO DO AMBIENTE
 # ==========================================================
 
+# Localiza a raiz do projeto.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Localiza o arquivo .env.
 ENV_PATH = BASE_DIR / ".env"
 
-# Carrega as variáveis do arquivo .env.
+# Carrega as variáveis de ambiente.
 load_dotenv(dotenv_path=ENV_PATH)
 
 
@@ -38,132 +42,123 @@ load_dotenv(dotenv_path=ENV_PATH)
 def carregar_configuracoes() -> dict:
     """
     Carrega e valida as configurações necessárias
-    para realizar chamadas à API Gemini.
+    para realizar chamadas à API Google Gemini.
+
+    Retorna um dicionário com os parâmetros operacionais.
     """
 
-    api_key = os.getenv(
-        "LLM_API_KEY", ""
+    # Recupera a chave de API.
+    api_key = (
+        os.getenv("LLM_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or ""
     ).strip()
 
+    # Valida a existência da chave.
+    if not api_key or api_key == "COLOQUE_SUA_CHAVE_AQUI":
+
+        raise ValueError(
+            "Chave de API não configurada.\n"
+            "Preencha a variável LLM_API_KEY no arquivo .env."
+        )
+
+    # Identificação do modelo.
     model_name = os.getenv(
         "LLM_MODEL_NAME",
         "gemini-3.5-flash-lite"
     ).strip()
 
+    # Versão da API.
     api_version = os.getenv(
         "LLM_API_VERSION",
         "v1beta"
     ).strip()
 
-    # Carrega o limite de tokens.
+    # Recuperação dos parâmetros numéricos.
     try:
 
         max_tokens = int(
             os.getenv("LLM_MAX_TOKENS", "500")
         )
 
+        timeout = float(
+            os.getenv("LLM_TIMEOUT", "10")
+        )
+
     except ValueError:
 
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "LLM_MAX_TOKENS precisa ser um número inteiro."
-            )
-        }
+        raise ValueError(
+            "Configuração inválida no arquivo .env.\n"
+            "Verifique LLM_MAX_TOKENS e LLM_TIMEOUT."
+        )
 
-    # ------------------------------------------------------
-    # VALIDAÇÃO DA CHAVE DE API
-    # ------------------------------------------------------
-
-    if not api_key:
-
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "A variável 'LLM_API_KEY' não foi encontrada.\n"
-                "Verifique o arquivo .env."
-            )
-        }
-
-    # ------------------------------------------------------
-    # VALIDAÇÃO DO MODELO
-    # ------------------------------------------------------
-
+    # Validação do modelo.
     if not model_name:
 
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "A variável 'LLM_MODEL_NAME' não está definida."
-            )
-        }
+        raise ValueError(
+            "A variável LLM_MODEL_NAME não foi definida."
+        )
 
-    # Remove o prefixo models/ caso esteja presente.
-    model_name = model_name.removeprefix("models/")
-
-    # ------------------------------------------------------
-    # VALIDAÇÃO DA VERSÃO DA API
-    # ------------------------------------------------------
-
+    # Validação da versão.
     if api_version not in ("v1", "v1beta"):
 
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "Versão da API inválida. "
-                "Utilize v1 ou v1beta."
-            )
-        }
+        raise ValueError(
+            "Versão da API inválida. Utilize v1 ou v1beta."
+        )
 
-    # ------------------------------------------------------
-    # VALIDAÇÃO DO LIMITE DE TOKENS
-    # ------------------------------------------------------
-
+    # Validação dos tokens.
     if max_tokens <= 0:
 
-        return {
-            "valido": False,
-            "erro": (
-                "[ERRO DE CONFIGURAÇÃO]: "
-                "LLM_MAX_TOKENS precisa ser maior que zero."
-            )
-        }
+        raise ValueError(
+            "LLM_MAX_TOKENS precisa ser maior que zero."
+        )
 
-    # ------------------------------------------------------
-    # CONSTRUÇÃO DO ENDPOINT
-    # ------------------------------------------------------
+    # Validação do timeout.
+    if not math.isfinite(timeout) or timeout <= 0:
 
-    endpoint = (
-        "https://generativelanguage.googleapis.com/"
-        f"{api_version}/models/"
-        f"{model_name}:generateContent"
-    )
+        raise ValueError(
+            "LLM_TIMEOUT precisa ser um número positivo."
+        )
 
-    # ------------------------------------------------------
-    # RETORNO DAS CONFIGURAÇÕES
-    # ------------------------------------------------------
+    # Remove eventual prefixo models/.
+    model_name = model_name.removeprefix("models/")
 
     return {
-        "valido": True,
         "api_key": api_key,
         "model_name": model_name,
-        "endpoint": endpoint,
+        "api_version": api_version,
         "max_tokens": max_tokens,
+        "timeout": timeout,
     }
 
 
 # ==========================================================
-# 3. CONFIGURAÇÃO DA AUTENTICAÇÃO
+# 3. CONSTRUÇÃO DO ENDPOINT
+# ==========================================================
+
+def construir_endpoint(config: dict) -> str:
+    """
+    Constrói automaticamente o endpoint REST
+    correspondente ao modelo configurado.
+    """
+
+    return (
+        "https://generativelanguage.googleapis.com/"
+        f"{config['api_version']}/models/"
+        f"{config['model_name']}:generateContent"
+    )
+
+
+# ==========================================================
+# 4. CONFIGURAÇÃO DA AUTENTICAÇÃO
 # ==========================================================
 
 def obter_cabecalhos(config: dict) -> dict:
     """
-    Configura os cabeçalhos HTTP para autenticação
-    na API Gemini.
+    Configura os cabeçalhos HTTP para autenticação.
+
+    A API Gemini utiliza x-goog-api-key.
+    A chave não é enviada na URL nem como Bearer.
     """
 
     return {
@@ -173,33 +168,62 @@ def obter_cabecalhos(config: dict) -> dict:
 
 
 # ==========================================================
-# 4. TRATAMENTO DOS ERROS DA API
+# 5. EXTRAÇÃO DAS MENSAGENS DE ERRO DA API
 # ==========================================================
 
-def diagnosticar_erro_api(response: requests.Response) -> str:
+def extrair_mensagem_erro_api(
+    response: requests.Response
+) -> str:
     """
-    Interpreta os erros HTTP retornados pelo Google.
+    Extrai com segurança a mensagem de erro
+    retornada pelo Google Gemini.
     """
-
-    status = response.status_code
 
     try:
 
         dados = response.json()
 
-        mensagem = (
-            dados.get("error", {}).get(
-                "message",
-                response.text
-            )
+        erro = dados.get("error", {})
+
+        if isinstance(erro, dict):
+
+            mensagem = erro.get("message")
+
+            if mensagem:
+                return mensagem
+
+        return (
+            response.text.strip()
+            or "Detalhe não informado pelo servidor."
         )
 
     except ValueError:
 
-        mensagem = response.text
+        return (
+            response.text.strip()
+            or "Não foi possível interpretar o erro retornado."
+        )
+
+
+# ==========================================================
+# 6. DIAGNÓSTICO DOS ERROS HTTP
+# ==========================================================
+
+def diagnosticar_erro_api(
+    response: requests.Response,
+    model_name: str
+) -> str:
+    """
+    Identifica os principais códigos HTTP
+    e retorna mensagens amigáveis em português.
+    """
+
+    status = response.status_code
+
+    detalhe = extrair_mensagem_erro_api(response)
 
     # ------------------------------------------------------
-    # ERRO 400
+    # HTTP 400 - REQUISIÇÃO INVÁLIDA
     # ------------------------------------------------------
 
     if status == 400:
@@ -207,166 +231,189 @@ def diagnosticar_erro_api(response: requests.Response) -> str:
         return (
             "[ERRO HTTP 400 - SOLICITAÇÃO INVÁLIDA]\n"
             "A API não conseguiu processar os parâmetros enviados.\n"
-            f"Detalhes do Google: {mensagem}"
+            f"Detalhes do Google: {detalhe}"
         )
 
     # ------------------------------------------------------
-    # ERRO 401
+    # HTTP 401 - FALHA DE AUTENTICAÇÃO
     # ------------------------------------------------------
 
     if status == 401:
 
         return (
-            "[ERRO HTTP 401 - AUTENTICAÇÃO]\n"
-            "A credencial enviada não foi aceita pelo Google.\n"
-            "Verifique a chave configurada em LLM_API_KEY.\n\n"
-            f"Detalhes do Google: {mensagem}"
+            "[ERRO DE AUTENTICAÇÃO (HTTP 401)]\n"
+            "A credencial de acesso foi recusada pelo Google.\n"
+            "Verifique se a chave de API está válida e ativa.\n"
+            "Confira também a variável LLM_API_KEY no .env.\n\n"
+            f"Detalhes do Google: {detalhe}"
         )
 
     # ------------------------------------------------------
-    # ERRO 403
+    # HTTP 403 - PERMISSÃO NEGADA
     # ------------------------------------------------------
 
     if status == 403:
 
         return (
-            "[ERRO HTTP 403 - ACESSO NEGADO]\n"
-            "A requisição foi recebida, mas o acesso "
-            "ao recurso foi negado.\n"
+            "[ERRO DE PERMISSÃO (HTTP 403)]\n"
+            "O acesso ao recurso solicitado foi negado.\n"
             "Verifique as permissões da chave e do projeto Google.\n\n"
-            f"Detalhes do Google: {mensagem}"
+            f"Detalhes do Google: {detalhe}"
         )
 
     # ------------------------------------------------------
-    # ERRO 404
+    # HTTP 404 - MODELO NÃO ENCONTRADO
     # ------------------------------------------------------
 
     if status == 404:
 
         return (
-            "[ERRO HTTP 404 - MODELO NÃO ENCONTRADO]\n"
-            "O modelo ou endpoint informado não foi localizado.\n"
-            "Confira LLM_MODEL_NAME e LLM_API_VERSION.\n\n"
-            f"Detalhes do Google: {mensagem}"
+            "[ERRO DE RECURSO NÃO ENCONTRADO (HTTP 404)]\n"
+            f"O modelo '{model_name}' ou endpoint não foi localizado.\n"
+            "Verifique LLM_MODEL_NAME e LLM_API_VERSION.\n\n"
+            f"Detalhes do Google: {detalhe}"
         )
 
     # ------------------------------------------------------
-    # ERRO 429
+    # HTTP 429 - LIMITE DE REQUISIÇÕES
     # ------------------------------------------------------
 
     if status == 429:
 
         return (
-            "[ERRO HTTP 429 - LIMITE DE REQUISIÇÕES]\n"
-            "O limite de utilização da API foi atingido.\n"
-            "Verifique sua cota e tente novamente depois.\n\n"
-            f"Detalhes do Google: {mensagem}"
+            "[LIMITE DE REQUISIÇÕES EXCEDIDO (HTTP 429)]\n"
+            "A cota de utilização da API foi atingida.\n"
+            "Verifique os limites de utilização do Google AI Studio.\n"
+            "Aguarde antes de realizar uma nova solicitação.\n\n"
+            f"Detalhes do Google: {detalhe}"
         )
 
     # ------------------------------------------------------
-    # ERROS DO SERVIDOR
+    # HTTP 500 OU SUPERIOR - FALHA NO SERVIDOR
     # ------------------------------------------------------
 
     if status >= 500:
 
         return (
-            f"[ERRO HTTP {status} - SERVIDOR GOOGLE]\n"
-            "O serviço Gemini apresentou uma falha temporária.\n"
+            f"[FALHA TEMPORÁRIA NO SERVIÇO (HTTP {status})]\n"
+            "Os servidores do Google Gemini estão instáveis "
+            "ou temporariamente indisponíveis.\n"
             "Tente novamente em alguns instantes.\n\n"
-            f"Detalhes do Google: {mensagem}"
+            f"Detalhes do Google: {detalhe}"
         )
 
+    # ------------------------------------------------------
+    # OUTROS ERROS HTTP
+    # ------------------------------------------------------
+
     return (
-        f"[ERRO HTTP {status}]\n"
-        f"Detalhes: {mensagem}"
+        f"[FALHA NA REQUISIÇÃO (HTTP {status})]\n"
+        f"Mensagem do provedor: {detalhe}"
     )
 
 
 # ==========================================================
-# 5. EXTRAÇÃO DA RESPOSTA DO MODELO
+# 7. EXTRAÇÃO DA RESPOSTA DO MODELO
 # ==========================================================
 
 def extrair_resposta(dados: dict) -> str:
     """
-    Extrai o conteúdo textual retornado pelo Gemini.
+    Extrai e organiza o conteúdo textual
+    retornado pelo modelo Gemini.
     """
 
     candidatos = dados.get("candidates", [])
 
+    # Verifica se existem respostas disponíveis.
     if not candidatos:
 
-        feedback = dados.get("promptFeedback", {})
+        feedback = dados.get("promptFeedback") or {}
 
-        motivo = feedback.get(
+        bloqueio = feedback.get(
             "blockReason",
-            "Nenhum candidato foi retornado."
+            "Filtro de segurança ou ausência de resposta."
         )
 
         return (
-            "[AVISO]: O Gemini não gerou uma resposta.\n"
-            f"Motivo: {motivo}"
+            "[RESPOSTA BLOQUEADA]: "
+            "O modelo não gerou conteúdo textual.\n"
+            f"Motivo: {bloqueio}"
         )
 
     candidato = candidatos[0]
 
-    partes = (
-        candidato
-        .get("content", {})
-        .get("parts", [])
-    )
+    conteudo = candidato.get("content") or {}
 
+    partes = conteudo.get("parts", [])
+
+    # Extrai todas as partes textuais.
     textos = [
+
         parte["text"]
+
         for parte in partes
+
         if isinstance(parte, dict)
         and isinstance(parte.get("text"), str)
+
     ]
 
     if textos:
 
         return "\n".join(textos).strip()
 
-    motivo = candidato.get(
+    # Identifica o motivo de encerramento.
+    motivo_fim = candidato.get(
         "finishReason",
-        "Resposta sem conteúdo textual."
+        "Conteúdo textual não identificado."
     )
 
     return (
-        "[AVISO]: A resposta recebida não possui "
-        "conteúdo textual.\n"
-        f"Motivo: {motivo}"
+        "[AVISO]: O modelo encerrou o processamento "
+        "sem gerar texto.\n"
+        f"Status de conclusão: {motivo_fim}"
     )
 
 
 # ==========================================================
-# 6. ENVIO DO PROMPT PARA O GEMINI
+# 8. ENVIO DO PROMPT PARA O GEMINI
 # ==========================================================
 
 def enviar_prompt_llm(prompt: str) -> str:
     """
-    Envia o prompt para a API Gemini.
+    Executa a requisição HTTP POST à API Gemini.
 
     Responsabilidades:
-    - Validar as configurações.
-    - Configurar a autenticação.
-    - Construir a requisição HTTP.
-    - Enviar a solicitação ao modelo.
-    - Extrair a resposta.
-    - Tratar erros de comunicação.
+    - Validar configurações.
+    - Validar o prompt.
+    - Preparar a autenticação.
+    - Construir o payload.
+    - Enviar a solicitação.
+    - Processar a resposta.
+    - Tratar exceções sem propagar tracebacks.
     """
 
     # ------------------------------------------------------
-    # CARREGAMENTO DAS CONFIGURAÇÕES
+    # ETAPA 1 - CARREGAMENTO DAS CONFIGURAÇÕES
     # ------------------------------------------------------
 
-    config = carregar_configuracoes()
+    try:
 
-    if not config["valido"]:
+        config = carregar_configuracoes()
 
-        return config["erro"]
+        endpoint = construir_endpoint(config)
+
+        headers = obter_cabecalhos(config)
+
+    except ValueError as erro:
+
+        return (
+            "[ERRO DE CONFIGURAÇÃO]: "
+            f"{str(erro)}"
+        )
 
     # ------------------------------------------------------
-    # VALIDAÇÃO DO PROMPT
+    # ETAPA 2 - VALIDAÇÃO DO PROMPT
     # ------------------------------------------------------
 
     if not prompt or not prompt.strip():
@@ -376,13 +423,7 @@ def enviar_prompt_llm(prompt: str) -> str:
         )
 
     # ------------------------------------------------------
-    # CABEÇALHOS DE AUTENTICAÇÃO
-    # ------------------------------------------------------
-
-    headers = obter_cabecalhos(config)
-
-    # ------------------------------------------------------
-    # CONSTRUÇÃO DO PAYLOAD
+    # ETAPA 3 - CONSTRUÇÃO DO PAYLOAD
     # ------------------------------------------------------
 
     payload = {
@@ -395,7 +436,7 @@ def enviar_prompt_llm(prompt: str) -> str:
                 "parts": [
 
                     {
-                        "text": prompt
+                        "text": prompt.strip()
                     }
 
                 ]
@@ -413,25 +454,36 @@ def enviar_prompt_llm(prompt: str) -> str:
     }
 
     # ------------------------------------------------------
-    # ENVIO DA REQUISIÇÃO HTTP
+    # ETAPA 4 - EXECUÇÃO DA REQUISIÇÃO HTTP
     # ------------------------------------------------------
 
     try:
 
         response = requests.post(
-            config["endpoint"],
+
+            endpoint,
+
             headers=headers,
+
             json=payload,
-            timeout=10
+
+            timeout=config["timeout"]
+
         )
 
-        # Verifica se a API retornou algum erro HTTP.
+        # --------------------------------------------------
+        # ETAPA 5 - VERIFICAÇÃO DO STATUS HTTP
+        # --------------------------------------------------
+
         if not response.ok:
 
-            return diagnosticar_erro_api(response)
+            return diagnosticar_erro_api(
+                response,
+                config["model_name"]
+            )
 
         # --------------------------------------------------
-        # INTERPRETAÇÃO DA RESPOSTA JSON
+        # ETAPA 6 - INTERPRETAÇÃO DA RESPOSTA JSON
         # --------------------------------------------------
 
         try:
@@ -441,18 +493,23 @@ def enviar_prompt_llm(prompt: str) -> str:
         except ValueError:
 
             return (
-                "[ERRO]: O servidor retornou uma resposta "
-                "que não está em formato JSON válido."
+                "[ERRO DE PARSING]: "
+                "A resposta recebida da API não pôde "
+                "ser interpretada como JSON."
             )
 
         # --------------------------------------------------
-        # EXTRAÇÃO DO TEXTO GERADO
+        # ETAPA 7 - EXTRAÇÃO DA RESPOSTA
         # --------------------------------------------------
 
         return extrair_resposta(dados)
 
+    # ======================================================
+    # 9. TRATAMENTO DE EXCEÇÕES DE COMUNICAÇÃO
+    # ======================================================
+
     # ------------------------------------------------------
-    # TRATAMENTO DE TIMEOUT
+    # TIMEOUT
     # ------------------------------------------------------
 
     except requests.exceptions.Timeout:
@@ -463,35 +520,39 @@ def enviar_prompt_llm(prompt: str) -> str:
         )
 
     # ------------------------------------------------------
-    # TRATAMENTO DE ERRO DE CONEXÃO
+    # FALHA DE CONEXÃO
     # ------------------------------------------------------
 
     except requests.exceptions.ConnectionError:
 
         return (
-            "[ERRO DE REDE]: Não foi possível estabelecer "
-            "conexão com o servidor Gemini.\n"
-            "Verifique sua conexão com a internet."
+            "[FALHA DE CONEXÃO DE REDE]\n"
+            "Não foi possível alcançar os servidores "
+            "da API do Google Gemini.\n"
+            "Verifique sua conexão com a internet, "
+            "firewall ou resolução de DNS."
         )
 
     # ------------------------------------------------------
-    # TRATAMENTO DE OUTROS ERROS HTTP
+    # OUTROS ERROS HTTP
     # ------------------------------------------------------
 
     except requests.exceptions.RequestException as erro:
 
         return (
-            "[ERRO DE COMUNICAÇÃO HTTP]: "
-            f"{str(erro)}"
+            "[ERRO DE TRANSPORTE HTTP]\n"
+            "Ocorreu uma falha durante a transmissão dos dados.\n"
+            f"Detalhes: {str(erro)}"
         )
 
     # ------------------------------------------------------
-    # TRATAMENTO DE ERROS INESPERADOS
+    # ERROS INESPERADOS
     # ------------------------------------------------------
 
     except Exception as erro:
 
         return (
-            "[ERRO INESPERADO]: "
-            f"{type(erro).__name__}: {str(erro)}"
+            "[ERRO INESPERADO NA APLICAÇÃO]\n"
+            f"Tipo: {type(erro).__name__}\n"
+            f"Detalhes: {str(erro)}"
         )
