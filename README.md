@@ -2,121 +2,77 @@
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 [![API REST](https://img.shields.io/badge/integration-REST%20HTTP-green.svg)](https://requests.readthedocs.io/)
-[![Google Gemini](https://img.shields.io/badge/LLM-Gemini%20Flash-orange.svg)](https://ai.google.dev/)
-[![Marco](https://img.shields.io/badge/milestone-p0--basico-success.svg)](#-status-do-marco)
+[![Google Gemini](https://img.shields.io/badge/LLM-Gemini%20Flash%20Lite-orange.svg)](https://ai.google.dev/)
+[![Marco](https://img.shields.io/badge/milestone-p0--intermediario-success.svg)](#-status-dos-marcos-do-projeto)
 
-Aplicação utilitária de linha de comando (CLI) desenvolvida em Python para padronizar, categorizar e priorizar relatos informais de falhas de TI enviados por colaboradores corporativos. O sistema consome diretamente a API REST do Google Gemini (sem uso de SDKs intermediários proprietários), transformando textos livres e ambíguos em fichas operacionais estruturadas para equipes de Suporte Técnico N1.
+Aplicação utilitária de linha de comando (CLI) desenvolvida em Python para padronizar, categorizar e priorizar relatos informais de incidentes de TI enviados por colaboradores corporativos. O sistema consome diretamente a API REST do Google Gemini via `requests` (sem uso de SDKs intermediários proprietários), transformando textos livres e ambíguos em fichas operacionais estruturadas para equipes de Suporte Técnico N1[cite: 17].
 
 ---
 
 ## 🎯 Problema e Valor da Solução
 
 > **Definição Canônica:**  
-> *"Uma pessoa que realiza atendimento de suporte técnico interno precisa transformar relatos livres e informais de incidentes em um resumo operacional padronizado com categoria, severidade e síntese da falha, porque atualmente enfrenta perda de tempo interpretando textos confusos ou redundantes para conseguir abrir chamados no sistema."*
+> *"Uma pessoa que realiza atendimento de suporte técnico interno precisa transformar relatos livres e informais de incidentes em um resumo operacional padronizado com categoria, severidade, síntese da falha e ação recomendada, porque atualmente enfrenta perda de tempo interpretando textos confusos ou redundantes para conseguir abrir chamados no sistema."*
 
 ### Por que usar LLM em vez de regras determinísticas?
 
-Regras estáticas baseadas em *Regex*, `if/else` ou busca por palavras-chave mostram-se ineficazes porque:
-
-1. **Variabilidade Vocabular:** Usuários leigos descrevem o mesmo problema de dezenas de formas diferentes ("tela preta", "não dá sinal", "monitor não acende", "computador apagou").
-2. **Inferência de Gravidade por Contexto:** A criticidade de um chamado depende do contexto de negócio exposto no texto (ex.: *"tenho folhas de pagamento para emitir em 1 hora"* qualifica o incidente como Alta/Crítica), nuance que regras fixas não compreendem.
-3. **Poder de Síntese:** Modelos de linguagem conseguem extrair a causa raiz em uma única oração técnica limpa, eliminando redundâncias.
+1. **Variabilidade Vocabular:** Usuários leigos descrevem o mesmo sintoma de formas imprevisíveis ("tela preta", "não dá sinal", "monitor não acende", "o computador morreu").
+2. **Inferência de Gravidade por Contexto:** A criticidade de um chamado depende do contexto de negócio exposto (ex.: *"tenho a folha de pagamento para rodar em 1 hora"* qualifica o incidente como Alta ou Crítica), nuance que regras de *Regex* e palavras-chave não capturam.
+3. **Poder de Síntese:** Modelos de linguagem consolidam a causa provável em uma oração técnica limpa e sugerem o primeiro passo de triagem operacional[cite: 17, 18].
 
 ---
 
 ## 🏗️ Arquitetura do Repositório
 
-O projeto segue padrões de modularidade, separação de configurações e isolamento de dependências:
+O projeto segue princípios rigorosos de desacoplamento, separação de responsabilidades e isolamento de ambiente[cite: 2]:
 
 ```text
 p0-triagem-helpdesk-llm/
-├── .vscode/               # Configuração do interpretador para VS Code
+├── .vscode/               # Configuração do interpretador e ambiente do VS Code
 ├── logs/                  # Diretório reservado para telemetria operacional
 │   └── .gitkeep
 ├── src/
-│   └── app.py             # Interface CLI, validações e integração HTTP REST
-├── tests/                 # Diretório estruturado para testes unitários
-├── .env.example           # Modelo público das variáveis de ambiente
-├── .gitignore             # Regras de exclusão de artefatos e credenciais
+│   ├── __pycache__/
+│   ├── app.py             # Camada CLI: interface, validação defensiva e formatação
+│   └── client.py          # Camada de Integração: HTTP REST, parâmetros e resiliência
+├── tests/                 # Diretório estruturado para suíte de testes unitários
+├── .env.example           # Modelo público das variáveis de ambiente exigidas
+├── .gitignore             # Regras de exclusão de artefatos, cache e credenciais (.env)
 ├── README.md              # Documentação técnica e guia de execução
 └── requirements.txt       # Dependências estritas do projeto
-
-
-📋 Pré-requisitos
-Python: Versão 3.12 ou superior instalada.
-Git: Instalado e configurado no sistema.
-Chave de API: Chave de acesso emitida no Google AI Studio.
-🚀 Guia Quick Start (Instalação e Execução)
-Siga o passo a passo abaixo para reproduzir o projeto a partir de um terminal limpo:
-1. Clonar o repositório
-Bash
-git clone https://github.com/SEU-USUARIO/p0-triagem-helpdesk-llm.git
+Divisão de Responsabilidades (Desacoplamento)src/app.py: Responsável exclusivo pela apresentação[cite: 17]. Faz validação preventiva de relatos vazios ou com menos de 10 caracteres, constrói o prompt estruturado de Help Desk[cite: 17, 18] e possui lazy import defensivo do cliente para economizar recursos.   src/client.py: Responsável exclusivo pela integração de rede e conformidade com a API REST[cite: 2]. Carrega e valida configurações de ambiente, autentica requisições via cabeçalho x-goog-api-key, injeta parâmetros de geração (maxOutputTokens, temperature) e intercepta falhas de rede (Timeout, ConnectionError, RequestException) e códigos de status HTTP sem propagar tracebacks no terminal.   📋 Pré-requisitosPython: Versão 3.12 ou superior instalada.Git: Instalado e configurado no terminal.Chave de API: Credencial ativa emitida no Google AI Studio.🚀 Guia Quick Start (Instalação e Execução)Siga os passos abaixo para reproduzir a execução a partir de um terminal limpo:1. Clonar o repositórioBashgit clone [https://github.com/andressasouza98/p0-triagem-helpdesk-llm.git](https://github.com/andressasouza98/p0-triagem-helpdesk-llm.git)
 cd p0-triagem-helpdesk-llm
-2. Criar e ativar o ambiente virtual isolado (.venv)
-Sem Linux/macOS:
-Bash
-python3 -m venv .venv
-source .venv/bin/activate
-Sem Windows (Git Bash):
-Bash
-python -m venv .venv
+2. Criar e ativar o ambiente virtual isolado (.venv)No Windows (Git Bash):Bashpython -m venv .venv
 source .venv/Scripts/activate
-Sem Windows (PowerShell):
-PowerShell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-(Certifique-se de visualizar o prefixo (.venv) no início da linha de comandos).
-3. Instalar as dependências estritas
-Bash
-pip install -r requirements.txt
-4. Configurar as variáveis de ambiente
-Copie o template de exemplo e preencha a sua chave de API:
-Bash
-cp .env.example .env
-Edite o arquivo.env recém-criado e insira a sua credencial:
-Esse
-LLM_API_KEY=sua_chave_real_do_google_ai_studio
-LLM_API_URL=https://generativelanguage.googleapis.com/v1beta/models
-LLM_MODEL_NAME=gemini-1.5-flash
+No Windows (PowerShell):PowerShellpython -m venv .venv
+.\.venv\Scripts\Activate.ps1
+No Linux / macOS:Bashpython3 -m venv .venv
+source .venv/bin/activate
+(Certifique-se de visualizar o prefixo (.venv) no início da linha de comando).3. Instalar as dependências estritasBashpip install -r requirements.txt
+4. Configurar as variáveis de ambienteCopie o template de exemplo e preencha a sua credencial real:Bashcp .env.example .env
+Edite o arquivo .env recém-criado:Snippet de códigoLLM_API_KEY=sua_chave_real_aqui
+LLM_MODEL_NAME=gemini-3.5-flash-lite
+LLM_API_VERSION=v1beta
 LLM_MAX_TOKENS=500
 LLM_TEMPERATURE=0.2
-5. Executar a aplicação
-Execute a aplicação via terminal como módulo Python:
-Bash
-python -m src.app
-💻 Exemplo Prático de Uso
-Entrada (Relato informal fornecido pelo usuário no terminal):
-Texto
-Olá suporte, preciso de ajuda com urgência. Cheguei hoje de manhã no setor financeiro e meu computador liga, as luzes acendem, mas o monitor fica piscando uma luz laranja e a tela fica preta sem sinal de imagem nenhum. Já tentei mexer nos cabos pretos atrás dele e nada. Não consigo abrir o faturamento e temos folhas de pagamento para emitir hoje até as 12h!
-Saída Estruturada Gerada pela Aplicação:
-Texto
-================ RESULTADO DA TRIAGEM ================
-CATEGORIA: Hardware
-SEVERIDADE SUGERIDA: Alta
-SÍNTESE DA FALHA: Computador liga normalmente, mas não transmite sinal de vídeo para o monitor.
-AÇÃO RECOMENDADA: Verificar fixação e integridade dos cabos de vídeo (HDMI/DisplayPort) ou testar o monitor em outra estação.
-======================================================
-🔒 Segurança, Privacidade e Gestão de Segredos
-Exclusão de Credenciais: O arquivo .env está explicitamente listado no .gitignore e nunca é comitado no repositório.
-Isolamento de Variáveis: O código consome variáveis via python-dotenveos.getenv(), sem chaves hardcoded no código-fonte.
-Transparência de Configuração: O arquivo .env.exemplo fornece os contratos necessários para execução sem expor credenciais reais.
-Tratamento Seguro de Falhas: Erros de autenticação (HTTP 401/403) ou transporte de rede são interceptados cirurgicamente, retornando mensagens claras sem expor chaves ou exibir stacktraces técnicos brutos.
-## 📌 Status do Marco
+LLM_TIMEOUT=30
+5. Executar a aplicaçãoExecute a aplicação como módulo a partir da raiz do projeto:Bashpython -m src.app
+💻 Exemplo Prático de UsoEntrada (Relato informal fornecido pelo usuário no terminal):PlaintextOlá suporte, preciso de ajuda com urgência. Cheguei hoje de manhã no setor financeiro e meu computador liga, as luzes acendem, mas o monitor fica piscando uma luz laranja e a tela fica preta sem sinal de imagem nenhum. Já tentei mexer nos cabos pretos atrás dele e nada. Não consigo abrir o faturamento e temos folhas de pagamento para emitir hoje até as 12h!
+Saída Estruturada Gerada pela Aplicação:Plaintext==========================================================
+                  RESULTADO DA TRIAGEM                    
+==========================================================
 
-Nível Básico (p0-básico): Fluxo CLI mínimo funcional de ponta a ponta, integração REST pura e isolamento com .venv.
+CATEGORIA:
+Hardware
 
-Nível Intermediário (p0-intermediário): Refatoração modular (src/client.py) e tratamento defensivo via Pull Request.
+SEVERIDADE SUGERIDA:
+Alta
 
-Nível Avançado (avanço p0): Logging operacional auditado (LGPD) e testes 100% offline via pytestesolicitações-simulação.
-Código
----
+SÍNTESE DA FALHA:
+Computador liga normalmente, mas o monitor não recebe sinal de vídeo, permanecendo com tela preta e LED laranja.
 
-# 2. Passo a Passo em Git para Fechamento do Marco `p0-basico`
+AÇÃO RECOMENDADA:
+Verificar a conexão e integridade dos cabos de vídeo (HDMI/DisplayPort), testar o monitor em outra tomada/estação ou substituir o cabo de sinal.
 
-Execute a sequência de comandos abaixo no seu terminal **Git Bash** para registrar as alterações, criar a tag oficial e enviá-las ao repositório remoto.
-
-### Passo 2.1: Verificar integridade dos arquivos
-Certifique-se de que o arquivo `.env` **não** consta na lista de arquivos rastreados:
-```bash
-git status
-(O retorno deve listar apenas README.md e eventuais arquivos modificados, com o .env devidamente ignorado).
+==========================================================
+🛡️ Resiliência, Segurança e Gestão de SegredosProteção de Segredos: O arquivo .env está estritamente listado no .gitignore. Nenhuma chave de API ou credencial privada é comitada no repositório.Contrato Público: O arquivo .env.example documenta todas as variáveis de controle (LLM_API_KEY, LLM_MODEL_NAME, LLM_API_VERSION, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_TIMEOUT) sem conter valores confidenciais.   Autenticação Segura: A chave é trafegada via cabeçalho HTTP x-goog-api-key, impedindo vazamentos em logs de servidor, proxies reversos ou históricos de URL.   Contenção Cirúrgica de Erros:Timeout Controlado: Requisições que ultrapassam 30 segundos são abortadas de forma limpa com mensagem amigável.   Status HTTP Granular: Interceptação contextual de erros 400, 401, 403, 404, 429 e >= 500 com orientações em português.   Zero Traceback Vermelho: Falhas de rede, interrupções com Ctrl + C (KeyboardInterrupt) e respostas inesperadas são capturadas de forma graciosa sem poluir a interface do usuário.   📌 Status dos Marcos do Projeto[x] Nível Básico (p0-basico): Fluxo funcional mínimo de ponta a ponta na CLI, consumo direto da API REST com requests e ambiente isolado com .venv.   [x] Nível Intermediário (p0-intermediario): Desacoplamento arquitetural em src/client.py, validação preventiva de entrada, parametrização dinâmica de geração (temperature, max_tokens), resiliência a timeouts/falhas de conexão e fluxo Git profissional com Pull Request via Squash and Merge[cite: 18].[ ] Nível Avançado (p0-avancado): Sistema de telemetria operacional com logging auditável compatível com a LGPD (logs/app.log), alerta para respostas truncadas (finishReason) e suíte de testes unitários 100% offline com pytest e requests-mock.
