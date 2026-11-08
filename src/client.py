@@ -1,126 +1,67 @@
 """
-Módulo Cliente - Integração Resiliente com a API Google Gemini REST.
-
-Projeto P0 - Primeiro Fluxo com LLM (Nível Intermediário).
-
-Responsabilidades:
-- Carregar configurações do ambiente.
-- Construir o endpoint da API Gemini.
-- Configurar autenticação.
-- Formatar requisições HTTP.
-- Processar respostas do modelo.
-- Tratar erros de configuração, rede e API.
-- Evitar propagação de tracebacks para a interface CLI.
+Módulo cliente HTTP para comunicação REST com a API Google Gemini.
+Responsável pelo carregamento de variáveis, estruturação de chamadas,
+resiliência operacional, telemetria (LGPD) e inspeção de finishReason.
 """
 
+import json
+import logging
 import os
-import math
+
 from pathlib import Path
-
-import requests
+import time
+from typing import Any, Dict
 from dotenv import load_dotenv
+import requests
 
 
-# ==========================================================
-# 1. CONFIGURAÇÃO DO AMBIENTE
-# ==========================================================
-
-# Localiza a raiz do projeto.
+# =====================================================================
+# CONFIGURAÇÃO DE LOGGING ESTRUTURADO (LGPD / ZERO PII)
+# =====================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "app.log"
 
-# Localiza o arquivo .env.
-ENV_PATH = BASE_DIR / ".env"
+logger = logging.getLogger("helpdesk_llm_client")
+logger.setLevel(logging.INFO)
 
-# Carrega as variáveis de ambiente.
-load_dotenv(dotenv_path=ENV_PATH)
+# Evita duplicação de handlers se o módulo for recarregado
+if not logger.handlers:
+    file_handler = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+# Garante que os logs não são impressos no terminal da CLI
+logger.propagate = False
 
 
-# ==========================================================
-# 2. CARREGAMENTO DAS CONFIGURAÇÕES
-# ==========================================================
-
-def carregar_configuracoes() -> dict:
+def carregar_configuracoes() -> Dict[str, Any]:
     """
-    Carrega e valida as configurações necessárias
-    para realizar chamadas à API Google Gemini.
-
-    Retorna um dicionário com os parâmetros operacionais.
+    Carrega e valida defensivamente as configurações do arquivo .env.
     """
+    load_dotenv(override=True)
 
-    # Recupera a chave de API.
-    api_key = (
-        os.getenv("LLM_API_KEY")
-        or os.getenv("GEMINI_API_KEY")
-        or ""
-    ).strip()
-
-    # Valida a existência da chave.
-    if not api_key or api_key == "COLOQUE_SUA_CHAVE_AQUI":
-
+    api_key = os.getenv("LLM_API_KEY", "").strip()
+    if not api_key:
         raise ValueError(
-            "Chave de API não configurada.\n"
-            "Preencha a variável LLM_API_KEY no arquivo .env."
+            "Chave de API ausente. Defina a variável 'LLM_API_KEY' no arquivo .env."
         )
 
-    # Identificação do modelo.
-    model_name = os.getenv(
-        "LLM_MODEL_NAME",
-        "gemini-3.5-flash-lite"
-    ).strip()
-
-    # Versão da API.
-    api_version = os.getenv(
-        "LLM_API_VERSION",
-        "v1beta"
-    ).strip()
-
-   # Recuperação dos parâmetros numéricos.
+    model_name = os.getenv("LLM_MODEL_NAME", "gemini-3.5-flash-lite").strip()
+    api_version = os.getenv("LLM_API_VERSION", "v1beta").strip()
     
     try:
-
-        max_tokens = int(
-            os.getenv("LLM_MAX_TOKENS", "500")
-        )
-        temperature = float(
-            os.getenv("LLM_TEMPERATURE", "0.2")
-        )
-        timeout = float(
-            os.getenv("LLM_TIMEOUT", "30")
-        )
-
+        max_tokens = int(os.getenv("LLM_MAX_TOKENS", "500"))
+        temperature = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+        timeout = float(os.getenv("LLM_TIMEOUT", "30"))
     except ValueError:
-        raise ValueError("Parâmetros numéricos em .env inválidos.")
-
-    # Validação do modelo.
-    if not model_name:
-
-        raise ValueError(
-            "A variável LLM_MODEL_NAME não foi definida."
-        )
-
-    # Validação da versão.
-    if api_version not in ("v1", "v1beta"):
-
-        raise ValueError(
-            "Versão da API inválida. Utilize v1 ou v1beta."
-        )
-
-    # Validação dos tokens.
-    if max_tokens <= 0:
-
-        raise ValueError(
-            "LLM_MAX_TOKENS precisa ser maior que zero."
-        )
-
-    # Validação do timeout.
-    if not math.isfinite(timeout) or timeout <= 0:
-
-        raise ValueError(
-            "LLM_TIMEOUT precisa ser um número positivo."
-        )
-
-    # Remove eventual prefixo models/.
-    model_name = model_name.removeprefix("models/")
+        raise ValueError("Parâmetros numéricos no arquivo .env inválidos.")
 
     return {
         "api_key": api_key,
@@ -132,454 +73,162 @@ def carregar_configuracoes() -> dict:
     }
 
 
-# ==========================================================
-# 3. CONSTRUÇÃO DO ENDPOINT
-# ==========================================================
-
-def construir_endpoint(config: dict) -> str:
+def extrair_resposta(response_data: dict) -> str:
     """
-    Constrói automaticamente o endpoint REST
-    correspondente ao modelo configurado.
+    Extrai o texto e inspeciona granularmente o finishReason retornado pela LLM.
     """
+    candidates = response_data.get("candidates", [])
+    if not candidates or not isinstance(candidates, list):
+        raise ValueError("Resposta da API sem candidatos válidos.")
 
-    return (
-        "https://generativelanguage.googleapis.com/"
-        f"{config['api_version']}/models/"
-        f"{config['model_name']}:generateContent"
-    )
+    primeiro_candidato = candidates[0]
+    finish_reason = primeiro_candidato.get("finishReason", "UNKNOWN")
 
-
-# ==========================================================
-# 4. CONFIGURAÇÃO DA AUTENTICAÇÃO
-# ==========================================================
-
-def obter_cabecalhos(config: dict) -> dict:
-    """
-    Configura os cabeçalhos HTTP para autenticação.
-
-    A API Gemini utiliza x-goog-api-key.
-    A chave não é enviada na URL nem como Bearer.
-    """
-
-    return {
-        "Content-Type": "application/json",
-        "x-goog-api-key": config["api_key"],
-    }
-
-
-# ==========================================================
-# 5. EXTRAÇÃO DAS MENSAGENS DE ERRO DA API
-# ==========================================================
-
-def extrair_mensagem_erro_api(
-    response: requests.Response
-) -> str:
-    """
-    Extrai com segurança a mensagem de erro
-    retornada pelo Google Gemini.
-    """
-
-    try:
-
-        dados = response.json()
-
-        erro = dados.get("error", {})
-
-        if isinstance(erro, dict):
-
-            mensagem = erro.get("message")
-
-            if mensagem:
-                return mensagem
-
+    # Tratamento de bloqueio por filtros de segurança
+    if finish_reason in ["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"]:
         return (
-            response.text.strip()
-            or "Detalhe não informado pelo servidor."
+            "[BLOQUEIO DE SEGURANÇA]: A resposta foi interrompida pelos filtros "
+            "de moderação da IA."
         )
 
-    except ValueError:
+    content = primeiro_candidato.get("content", {})
+    parts = content.get("parts", [])
+    if not parts or not isinstance(parts, list):
+        raise ValueError("Conteúdo da resposta retornado vazio ou inválido.")
 
-        return (
-            response.text.strip()
-            or "Não foi possível interpretar o erro retornado."
-        )
+    texto_gerado = parts[0].get("text", "").strip()
 
-
-# ==========================================================
-# 6. DIAGNÓSTICO DOS ERROS HTTP
-# ==========================================================
-
-def diagnosticar_erro_api(
-    response: requests.Response,
-    model_name: str
-) -> str:
-    """
-    Identifica os principais códigos HTTP
-    e retorna mensagens amigáveis em português.
-    """
-
-    status = response.status_code
-
-    detalhe = extrair_mensagem_erro_api(response)
-
-    # ------------------------------------------------------
-    # HTTP 400 - REQUISIÇÃO INVÁLIDA
-    # ------------------------------------------------------
-
-    if status == 400:
-
-        return (
-            "[ERRO HTTP 400 - SOLICITAÇÃO INVÁLIDA]\n"
-            "A API não conseguiu processar os parâmetros enviados.\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # HTTP 401 - FALHA DE AUTENTICAÇÃO
-    # ------------------------------------------------------
-
-    if status == 401:
-
-        return (
-            "[ERRO DE AUTENTICAÇÃO (HTTP 401)]\n"
-            "A credencial de acesso foi recusada pelo Google.\n"
-            "Verifique se a chave de API está válida e ativa.\n"
-            "Confira também a variável LLM_API_KEY no .env.\n\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # HTTP 403 - PERMISSÃO NEGADA
-    # ------------------------------------------------------
-
-    if status == 403:
-
-        return (
-            "[ERRO DE PERMISSÃO (HTTP 403)]\n"
-            "O acesso ao recurso solicitado foi negado.\n"
-            "Verifique as permissões da chave e do projeto Google.\n\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # HTTP 404 - MODELO NÃO ENCONTRADO
-    # ------------------------------------------------------
-
-    if status == 404:
-
-        return (
-            "[ERRO DE RECURSO NÃO ENCONTRADO (HTTP 404)]\n"
-            f"O modelo '{model_name}' ou endpoint não foi localizado.\n"
-            "Verifique LLM_MODEL_NAME e LLM_API_VERSION.\n\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # HTTP 429 - LIMITE DE REQUISIÇÕES
-    # ------------------------------------------------------
-
-    if status == 429:
-
-        return (
-            "[LIMITE DE REQUISIÇÕES EXCEDIDO (HTTP 429)]\n"
-            "A cota de utilização da API foi atingida.\n"
-            "Verifique os limites de utilização do Google AI Studio.\n"
-            "Aguarde antes de realizar uma nova solicitação.\n\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # HTTP 500 OU SUPERIOR - FALHA NO SERVIDOR
-    # ------------------------------------------------------
-
-    if status >= 500:
-
-        return (
-            f"[FALHA TEMPORÁRIA NO SERVIÇO (HTTP {status})]\n"
-            "Os servidores do Google Gemini estão instáveis "
-            "ou temporariamente indisponíveis.\n"
-            "Tente novamente em alguns instantes.\n\n"
-            f"Detalhes do Google: {detalhe}"
-        )
-
-    # ------------------------------------------------------
-    # OUTROS ERROS HTTP
-    # ------------------------------------------------------
-
-    return (
-        f"[FALHA NA REQUISIÇÃO (HTTP {status})]\n"
-        f"Mensagem do provedor: {detalhe}"
-    )
-
-
-# ==========================================================
-# 7. EXTRAÇÃO E INSPEÇÃO DEFENSIVA DA RESPOSTA DO MODELO
-# ==========================================================
-
-def extrair_resposta(dados: dict) -> str:
-    """
-    Extrai o conteúdo textual retornado pelo modelo Gemini e inspeciona
-    defensivamente o motivo de encerramento da geração (finishReason).
-    """
-
-    candidatos = dados.get("candidates", [])
-
-    # 1. Verifica se a geração foi bloqueada antes de criar candidatos
-    if not candidatos:
-
-        feedback = dados.get("promptFeedback") or {}
-        
-        bloqueio = feedback.get(
-            "blockReason",
-            "Filtro de segurança ou ausência de resposta."
-        )
-
-        return (
-            "[RESPOSTA BLOQUEADA PELO PROVEDOR]\n"
-            "O modelo não gerou conteúdo textual para este chamado.\n"
-            f"Motivo informado pelo Google: {bloqueio}"
-        )
-
-    candidato = candidatos[0]
-    if not isinstance(candidato, dict):
-        return "[ERRO DE ESTRUTURA]: Formato de candidato inválido na resposta da API."
-
-    # 2. Extração segura e padronizada do motivo de término (finishReason)
-    finish_reason = str(candidato.get("finishReason", "STOP")).upper()
-
-    # 3. Extração defensiva das partes de texto geradas
-    conteudo = candidato.get("content") or {}
-    partes = conteudo.get("parts", []) if isinstance(conteudo, dict) else []
-    textos = [
-        parte.get("text")
-        for parte in partes
-        if isinstance(parte, dict) and isinstance(parte.get("text"), str)
-    ]
-    texto_gerado = "\n".join(textos).strip()
-
-    # 4. Tratamento granular por tipo de encerramento
-    if finish_reason == "STOP":
-        if texto_gerado:
-            return texto_gerado
-        return "[AVISO]: O modelo concluiu a geração, mas não retornou texto visível."
-
-    elif finish_reason in ("MAX_TOKENS", "LENGTH"):
-        aviso_truncamento = (
-            "\n\n----------------------------------------------------------\n"
-            "[ALERTA DE TRUNCAMENTO]: O limite de tokens configurado foi atingido. "
+    # Alerta de truncamento caso o limite de tokens tenha sido atingido
+    if finish_reason in ["MAX_TOKENS", "length"]:
+        texto_gerado += (
+            "\n\n[ALERTA DE TRUNCAMENTO]: O limite de tokens configurado foi atingido. "
             "A resposta pode estar incompleta.\n"
             "Sugestão técnica: Aumente o valor de 'LLM_MAX_TOKENS' no arquivo .env."
         )
-        if texto_gerado:
-            return texto_gerado + aviso_truncamento
-        return (
-            "[ALERTA DE TRUNCAMENTO]: O modelo atingiu o limite de tokens antes de gerar texto.\n"
-            "Aumente o valor de 'LLM_MAX_TOKENS' no arquivo .env."
-        )
+    elif finish_reason not in ["STOP", "UNKNOWN"]:
+        texto_gerado += f"\n\n[AVISO]: Finalização anormal da resposta ({finish_reason})."
 
-    elif finish_reason == "SAFETY":
-        return (
-            "[RESPOSTA BLOQUEADA POR POLÍTICA DE SEGURANÇA (SAFETY)]\n"
-            "O processamento foi interrompido pelos filtros de moderação do modelo.\n"
-            "Causa: O relato fornecido ativou políticas de restrição de conteúdo do Google Gemini."
-        )
+    return texto_gerado
 
-    elif finish_reason == "RECITATION":
-        return (
-            "[BLOQUEIO POR RECITAÇÃO (RECITATION)]\n"
-            "A geração foi interrompida para evitar reprodução exata de material protegido por direitos autorais."
-        )
-
-    else:
-        # Tratamento de fallback para outros motivos (OTHER, UNKNOWN, etc.)
-        aviso_generico = (
-            f"\n\n[AVISO]: O processamento encerrou com status atípico: '{finish_reason}'."
-        )
-        if texto_gerado:
-            return texto_gerado + aviso_generico
-        return (
-            "[AVISO]: O modelo encerrou o processamento sem gerar texto legível.\n"
-            f"Status informado: {finish_reason}"
-        )
-
-
-# ==========================================================
-# 8. ENVIO DO PROMPT PARA O GEMINI
-# ==========================================================
 
 def enviar_prompt_llm(prompt: str) -> str:
     """
-    Executa a requisição HTTP POST à API Gemini.
-
-    Responsabilidades:
-    - Validar configurações.
-    - Validar o prompt.
-    - Preparar a autenticação.
-    - Construir o payload.
-    - Enviar a solicitação.
-    - Processar a resposta.
-    - Tratar exceções sem propagar tracebacks.
+    Envia o prompt para a API do Gemini via REST, registrando telemetria
+    estritamente técnica (LGPD / Zero PII) em logs/app.log com latência em milissegundos.
     """
+    config = carregar_configuracoes()
 
-    # ------------------------------------------------------
-    # ETAPA 1 - CARREGAMENTO DAS CONFIGURAÇÕES
-    # ------------------------------------------------------
+    url = (
+        f"https://generativelanguage.googleapis.com/{config['api_version']}/"
+        f"models/{config['model_name']}:generateContent"
+    )
 
-    try:
-
-        config = carregar_configuracoes()
-
-        endpoint = construir_endpoint(config)
-
-        headers = obter_cabecalhos(config)
-
-    except ValueError as erro:
-
-        return (
-            "[ERRO DE CONFIGURAÇÃO]: "
-            f"{str(erro)}"
-        )
-
-    # ------------------------------------------------------
-    # ETAPA 2 - VALIDAÇÃO DO PROMPT
-    # ------------------------------------------------------
-
-    if not prompt or not prompt.strip():
-
-        return (
-            "[ERRO]: O prompt enviado está vazio."
-        )
-
-    # ------------------------------------------------------
-    # ETAPA 3 - CONSTRUÇÃO DO PAYLOAD
-    # ------------------------------------------------------
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config["api_key"]
+    }
 
     payload = {
 
         "contents": [
-
             {
-                "role": "user",
-
-                "parts": [
-
-                    {
-                        "text": prompt.strip()
-                    }
-
-                ]
-
+                "parts": [{"text": prompt}]
             }
-
         ],
-
-       "generationConfig": {
-            "maxOutputTokens": config.get("max_tokens", 500),
-            "temperature": config.get("temperature", 0.2)
+        "generationConfig": {
+            "maxOutputTokens": config["max_tokens"],
+            "temperature": config["temperature"]
         }
 
     }
 
-    # ------------------------------------------------------
-    # ETAPA 4 - EXECUÇÃO DA REQUISIÇÃO HTTP
-    # ------------------------------------------------------
+    prompt_char_len = len(prompt)
+    inicio = time.perf_counter()
 
     try:
 
         response = requests.post(
-
-            endpoint,
-
+            url,
             headers=headers,
 
             json=payload,
 
             timeout=config["timeout"]
+        )
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
 
+        # Interceptação de códigos HTTP específicos
+        if response.status_code == 401 or response.status_code == 403:
+            logger.error(
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
+                f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=AuthError"
+            )
+            return (
+                "[ERRO DE AUTENTICAÇÃO]: Chave de API inválida ou sem permissão. "
+                "Verifique a variável 'LLM_API_KEY' no arquivo .env."
+            )
+
+        if response.status_code == 429:
+            logger.warning(
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
+                f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=RateLimit"
+            )
+            return (
+                "[LIMITE DE REQUISIÇÕES]: Quota de uso excedida na API. "
+                "Aguarde alguns instantes antes de enviar um novo relato."
+            )
+
+        if response.status_code >= 500:
+            logger.error(
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
+                f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=ServerError"
+            )
+            return (
+                f"[ERRO DO SERVIDOR]: Os servidores do Gemini retornaram status {response.status_code}. "
+                "Tente novamente em breve."
+            )
+
+        response.raise_for_status()
+
+        # Decodificação do payload
+        data = response.json()
+        candidatos = data.get("candidates", [{}])
+        finish_reason = candidatos[0].get("finishReason", "UNKNOWN") if candidatos else "UNKNOWN"
+
+        # Telemetria de Sucesso (Zero PII: apenas metadados técnicos)
+        logger.info(
+            f"status={response.status_code} | latency_ms={latencia_ms}ms | "
+            f"prompt_chars={prompt_char_len} | model={config['model_name']} | finish_reason={finish_reason}"
         )
 
-        # --------------------------------------------------
-        # ETAPA 5 - VERIFICAÇÃO DO STATUS HTTP
-        # --------------------------------------------------
-
-        if not response.ok:
-
-            return diagnosticar_erro_api(
-                response,
-                config["model_name"]
-            )
-
-        # --------------------------------------------------
-        # ETAPA 6 - INTERPRETAÇÃO DA RESPOSTA JSON
-        # --------------------------------------------------
-
-        try:
-
-            dados = response.json()
-
-        except ValueError:
-
-            return (
-                "[ERRO DE PARSING]: "
-                "A resposta recebida da API não pôde "
-                "ser interpretada como JSON."
-            )
-
-        # --------------------------------------------------
-        # ETAPA 7 - EXTRAÇÃO DA RESPOSTA
-        # --------------------------------------------------
-
-        return extrair_resposta(dados)
-
-    # ======================================================
-    # 9. TRATAMENTO DE EXCEÇÕES DE COMUNICAÇÃO
-    # ======================================================
-
-    # ------------------------------------------------------
-    # TIMEOUT
-    # ------------------------------------------------------
+        return extrair_resposta(data)
 
     except requests.exceptions.Timeout:
-
-        return (
-            "Erro de conexão: "
-            "O serviço do LLM demorou muito para responder."
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
+        logger.error(
+            f"status=TIMEOUT | latency_ms={latencia_ms}ms | "
+            f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=Timeout"
         )
-
-    # ------------------------------------------------------
-    # FALHA DE CONEXÃO
-    # ------------------------------------------------------
-
+        return (
+            f"[TEMPO LIMITE EXCEDIDO]: A requisição ultrapassou o limite de {config['timeout']}s. "
+            "Verifique a sua conexão com a internet."
+        )
+    
     except requests.exceptions.ConnectionError:
-
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
+        logger.error(
+            f"status=CONNECTION_ERROR | latency_ms={latencia_ms}ms | "
+            f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=ConnectionError"
+        )
         return (
-            "[FALHA DE CONEXÃO DE REDE]\n"
-            "Não foi possível alcançar os servidores "
-            "da API do Google Gemini.\n"
-            "Verifique sua conexão com a internet, "
-            "firewall ou resolução de DNS."
+            "[FALHA DE CONEXÃO]: Não foi possível conectar ao servidor da API. "
+            "Verifique se o seu dispositivo possui acesso à rede."
         )
 
-    # ------------------------------------------------------
-    # OUTROS ERROS HTTP
-    # ------------------------------------------------------
-
-    except requests.exceptions.RequestException as erro:
-
-        return (
-            "[ERRO DE TRANSPORTE HTTP]\n"
-            "Ocorreu uma falha durante a transmissão dos dados.\n"
-            f"Detalhes: {str(erro)}"
+    except requests.exceptions.RequestException as err:
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
+        logger.error(
+            f"status=REQUEST_EXCEPTION | latency_ms={latencia_ms}ms | "
+            f"prompt_chars={prompt_char_len} | model={config['model_name']} | error={type(err).__name__}"
         )
-
-    # ------------------------------------------------------
-    # ERROS INESPERADOS
-    # ------------------------------------------------------
-
-    except Exception as erro:
-
-        return (
-            "[ERRO INESPERADO NA APLICAÇÃO]\n"
-            f"Tipo: {type(erro).__name__}\n"
-            f"Detalhes: {str(erro)}"
-        )
+        return f"[FALHA DE COMUNICAÇÃO HTTP]: Ocorreu um erro inesperado: {err}"
