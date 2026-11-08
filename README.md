@@ -195,6 +195,6 @@ Inspecionar a integridade e conexão física dos cabos de vídeo (HDMI/DisplayPo
 
 | Nível do Marco | Tag Oficial | Status | Principais Evidências Entregues |
 | :--- | :--- | :---: | :--- |
-| **Básico** | `p0-basico` | **Concluído** | Fluxo CLI funcional ponta a ponta, integração REST pura sem SDKs e isolamento em ambiente virtual `.venv`. |
-| **Intermediário** | `p0-intermediario` | **Concluído** | Desacoplamento entre `app.py` e `client.py`, validações defensivas de entrada, parametrização dinâmica de geração (`temperature`), contenção total de *tracebacks* e fluxo Git com PR via *Squash and Merge*. |
+| **Básico** | `p0-basico` | *Concluído* | Fluxo CLI funcional ponta a ponta, integração REST pura sem SDKs e isolamento em ambiente virtual `.venv`. |
+| **Intermediário** | `p0-intermediario` | *Concluído* | Desacoplamento entre `app.py` e `client.py`, validações defensivas de entrada, parametrização dinâmica de geração (`temperature`), contenção total de *tracebacks* e fluxo Git com PR via *Squash and Merge*. |
 | **Avançado** | `p0-avancado` | *Planejado* | Telemetria e logging estruturado com conformidade à LGPD (`logs/app.log`), detecção de respostas truncadas (`finishReason`) e suíte de testes unitários offline com `pytest` e `requests-mock`. |
