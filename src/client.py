@@ -26,7 +26,7 @@ LOG_FILE = LOG_DIR / "app.log"
 logger = logging.getLogger("helpdesk_llm_client")
 logger.setLevel(logging.INFO)
 
-# Evita duplicar handlers se o módulo for recarregado
+# Evita duplicação de handlers se o módulo for recarregado
 if not logger.handlers:
     file_handler = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
     file_handler.setLevel(logging.INFO)
@@ -37,7 +37,7 @@ if not logger.handlers:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-# Garante que os logs NÃO subam para a tela da CLI (console limpo)
+# Garante que os logs não são impressos no terminal da CLI
 logger.propagate = False
 
 
@@ -55,8 +55,7 @@ def carregar_configuracoes() -> Dict[str, Any]:
 
     model_name = os.getenv("LLM_MODEL_NAME", "gemini-3.5-flash-lite").strip()
     api_version = os.getenv("LLM_API_VERSION", "v1beta").strip()
-
-
+    
     try:
         max_tokens = int(os.getenv("LLM_MAX_TOKENS", "500"))
         temperature = float(os.getenv("LLM_TEMPERATURE", "0.2"))
@@ -115,7 +114,7 @@ def extrair_resposta(response_data: dict) -> str:
 def enviar_prompt_llm(prompt: str) -> str:
     """
     Envia o prompt para a API do Gemini via REST, registrando telemetria
-    estritamente técnica (LGPD / Zero PII) em logs/app.log.
+    estritamente técnica (LGPD / Zero PII) em logs/app.log com latência em milissegundos.
     """
     config = carregar_configuracoes()
 
@@ -153,15 +152,15 @@ def enviar_prompt_llm(prompt: str) -> str:
             headers=headers,
 
             json=payload,
-            
+
             timeout=config["timeout"]
         )
-        latencia = round(time.perf_counter() - inicio, 3)
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
 
         # Interceptação de códigos HTTP específicos
         if response.status_code == 401 or response.status_code == 403:
             logger.error(
-                f"status={response.status_code} | latency={latencia}s | "
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
                 f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=AuthError"
             )
             return (
@@ -171,7 +170,7 @@ def enviar_prompt_llm(prompt: str) -> str:
 
         if response.status_code == 429:
             logger.warning(
-                f"status={response.status_code} | latency={latencia}s | "
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
                 f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=RateLimit"
             )
             return (
@@ -181,7 +180,7 @@ def enviar_prompt_llm(prompt: str) -> str:
 
         if response.status_code >= 500:
             logger.error(
-                f"status={response.status_code} | latency={latencia}s | "
+                f"status={response.status_code} | latency_ms={latencia_ms}ms | "
                 f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=ServerError"
             )
             return (
@@ -196,18 +195,18 @@ def enviar_prompt_llm(prompt: str) -> str:
         candidatos = data.get("candidates", [{}])
         finish_reason = candidatos[0].get("finishReason", "UNKNOWN") if candidatos else "UNKNOWN"
 
-        # Telemetria de Sucesso (Zero PII: sem texto de relato ou resposta)
+        # Telemetria de Sucesso (Zero PII: apenas metadados técnicos)
         logger.info(
-            f"status={response.status_code} | latency={latencia}s | "
+            f"status={response.status_code} | latency_ms={latencia_ms}ms | "
             f"prompt_chars={prompt_char_len} | model={config['model_name']} | finish_reason={finish_reason}"
         )
 
         return extrair_resposta(data)
 
     except requests.exceptions.Timeout:
-        latencia = round(time.perf_counter() - inicio, 3)
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
         logger.error(
-            f"status=TIMEOUT | latency={latencia}s | "
+            f"status=TIMEOUT | latency_ms={latencia_ms}ms | "
             f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=Timeout"
         )
         return (
@@ -215,11 +214,10 @@ def enviar_prompt_llm(prompt: str) -> str:
             "Verifique a sua conexão com a internet."
         )
     
-
     except requests.exceptions.ConnectionError:
-        latencia = round(time.perf_counter() - inicio, 3)
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
         logger.error(
-            f"status=CONNECTION_ERROR | latency={latencia}s | "
+            f"status=CONNECTION_ERROR | latency_ms={latencia_ms}ms | "
             f"prompt_chars={prompt_char_len} | model={config['model_name']} | error=ConnectionError"
         )
         return (
@@ -228,9 +226,9 @@ def enviar_prompt_llm(prompt: str) -> str:
         )
 
     except requests.exceptions.RequestException as err:
-        latencia = round(time.perf_counter() - inicio, 3)
+        latencia_ms = int((time.perf_counter() - inicio) * 1000)
         logger.error(
-            f"status=REQUEST_EXCEPTION | latency={latencia}s | "
+            f"status=REQUEST_EXCEPTION | latency_ms={latencia_ms}ms | "
             f"prompt_chars={prompt_char_len} | model={config['model_name']} | error={type(err).__name__}"
         )
         return f"[FALHA DE COMUNICAÇÃO HTTP]: Ocorreu um erro inesperado: {err}"

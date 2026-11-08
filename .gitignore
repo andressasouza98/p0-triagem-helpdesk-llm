@@ -43,4 +43,4 @@ logs/*.log
 # ==========================================
 Thumbs.db
 Desktop.ini
-.DS_Store
+.DS_Storelogs/*.log
