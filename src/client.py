@@ -74,23 +74,22 @@ def carregar_configuracoes() -> dict:
         "v1beta"
     ).strip()
 
-    # Recuperação dos parâmetros numéricos.
+   # Recuperação dos parâmetros numéricos.
+    
     try:
 
         max_tokens = int(
             os.getenv("LLM_MAX_TOKENS", "500")
         )
-
+        temperature = float(
+            os.getenv("LLM_TEMPERATURE", "0.2")
+        )
         timeout = float(
-            os.getenv("LLM_TIMEOUT", "10")
+            os.getenv("LLM_TIMEOUT", "30")
         )
 
     except ValueError:
-
-        raise ValueError(
-            "Configuração inválida no arquivo .env.\n"
-            "Verifique LLM_MAX_TOKENS e LLM_TIMEOUT."
-        )
+        raise ValueError("Parâmetros numéricos em .env inválidos.")
 
     # Validação do modelo.
     if not model_name:
@@ -128,6 +127,7 @@ def carregar_configuracoes() -> dict:
         "model_name": model_name,
         "api_version": api_version,
         "max_tokens": max_tokens,
+        "temperature": temperature,
         "timeout": timeout,
     }
 
@@ -313,66 +313,94 @@ def diagnosticar_erro_api(
 
 
 # ==========================================================
-# 7. EXTRAÇÃO DA RESPOSTA DO MODELO
+# 7. EXTRAÇÃO E INSPEÇÃO DEFENSIVA DA RESPOSTA DO MODELO
 # ==========================================================
 
 def extrair_resposta(dados: dict) -> str:
     """
-    Extrai e organiza o conteúdo textual
-    retornado pelo modelo Gemini.
+    Extrai o conteúdo textual retornado pelo modelo Gemini e inspeciona
+    defensivamente o motivo de encerramento da geração (finishReason).
     """
 
     candidatos = dados.get("candidates", [])
 
-    # Verifica se existem respostas disponíveis.
+    # 1. Verifica se a geração foi bloqueada antes de criar candidatos
     if not candidatos:
 
         feedback = dados.get("promptFeedback") or {}
-
+        
         bloqueio = feedback.get(
             "blockReason",
             "Filtro de segurança ou ausência de resposta."
         )
 
         return (
-            "[RESPOSTA BLOQUEADA]: "
-            "O modelo não gerou conteúdo textual.\n"
-            f"Motivo: {bloqueio}"
+            "[RESPOSTA BLOQUEADA PELO PROVEDOR]\n"
+            "O modelo não gerou conteúdo textual para este chamado.\n"
+            f"Motivo informado pelo Google: {bloqueio}"
         )
 
     candidato = candidatos[0]
+    if not isinstance(candidato, dict):
+        return "[ERRO DE ESTRUTURA]: Formato de candidato inválido na resposta da API."
 
+    # 2. Extração segura e padronizada do motivo de término (finishReason)
+    finish_reason = str(candidato.get("finishReason", "STOP")).upper()
+
+    # 3. Extração defensiva das partes de texto geradas
     conteudo = candidato.get("content") or {}
-
-    partes = conteudo.get("parts", [])
-
-    # Extrai todas as partes textuais.
+    partes = conteudo.get("parts", []) if isinstance(conteudo, dict) else []
     textos = [
-
-        parte["text"]
-
+        parte.get("text")
         for parte in partes
-
-        if isinstance(parte, dict)
-        and isinstance(parte.get("text"), str)
-
+        if isinstance(parte, dict) and isinstance(parte.get("text"), str)
     ]
+    texto_gerado = "\n".join(textos).strip()
 
-    if textos:
+    # 4. Tratamento granular por tipo de encerramento
+    if finish_reason == "STOP":
+        if texto_gerado:
+            return texto_gerado
+        return "[AVISO]: O modelo concluiu a geração, mas não retornou texto visível."
 
-        return "\n".join(textos).strip()
+    elif finish_reason in ("MAX_TOKENS", "LENGTH"):
+        aviso_truncamento = (
+            "\n\n----------------------------------------------------------\n"
+            "[ALERTA DE TRUNCAMENTO]: O limite de tokens configurado foi atingido. "
+            "A resposta pode estar incompleta.\n"
+            "Sugestão técnica: Aumente o valor de 'LLM_MAX_TOKENS' no arquivo .env."
+        )
+        if texto_gerado:
+            return texto_gerado + aviso_truncamento
+        return (
+            "[ALERTA DE TRUNCAMENTO]: O modelo atingiu o limite de tokens antes de gerar texto.\n"
+            "Aumente o valor de 'LLM_MAX_TOKENS' no arquivo .env."
+        )
 
-    # Identifica o motivo de encerramento.
-    motivo_fim = candidato.get(
-        "finishReason",
-        "Conteúdo textual não identificado."
-    )
+    elif finish_reason == "SAFETY":
+        return (
+            "[RESPOSTA BLOQUEADA POR POLÍTICA DE SEGURANÇA (SAFETY)]\n"
+            "O processamento foi interrompido pelos filtros de moderação do modelo.\n"
+            "Causa: O relato fornecido ativou políticas de restrição de conteúdo do Google Gemini."
+        )
 
-    return (
-        "[AVISO]: O modelo encerrou o processamento "
-        "sem gerar texto.\n"
-        f"Status de conclusão: {motivo_fim}"
-    )
+    elif finish_reason == "RECITATION":
+        return (
+            "[BLOQUEIO POR RECITAÇÃO (RECITATION)]\n"
+            "A geração foi interrompida para evitar reprodução exata de material protegido por direitos autorais."
+        )
+
+    else:
+        # Tratamento de fallback para outros motivos (OTHER, UNKNOWN, etc.)
+        aviso_generico = (
+            f"\n\n[AVISO]: O processamento encerrou com status atípico: '{finish_reason}'."
+        )
+        if texto_gerado:
+            return texto_gerado + aviso_generico
+        return (
+            "[AVISO]: O modelo encerrou o processamento sem gerar texto legível.\n"
+            f"Status informado: {finish_reason}"
+        )
 
 
 # ==========================================================
@@ -445,10 +473,9 @@ def enviar_prompt_llm(prompt: str) -> str:
 
         ],
 
-        "generationConfig": {
-
-            "maxOutputTokens": config["max_tokens"],
-
+       "generationConfig": {
+            "maxOutputTokens": config.get("max_tokens", 500),
+            "temperature": config.get("temperature", 0.2)
         }
 
     }
