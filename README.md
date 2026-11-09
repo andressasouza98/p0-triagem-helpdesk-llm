@@ -1,107 +1,105 @@
-# 🛠️ Sistema de Triagem e Classificação de Incidentes (Help Desk)
+# p0-triagem-helpdesk-llm
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Google Gemini API](https://img.shields.io/badge/Google%20Gemini-REST%20API-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
-[![Requests HTTP](https://img.shields.io/badge/Requests-HTTP%20Resilient-2CA5E0?style=for-the-badge)](https://requests.readthedocs.io/)
-[![Milestone](https://img.shields.io/badge/Milestone-p0--intermediario-2ea44f?style=for-the-badge)](#-matriz-de-marcos-do-projeto)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Code Style](https://img.shields.io/badge/code%20style-pep8-green.svg)](https://pep8.org/)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
+[![Release p0-basico](https://img.shields.io/badge/release-p0--basico-orange.svg)](https://github.com/andressasouza98/p0-triagem-helpdesk-llm/releases/tag/p0-basico)
+[![Release p0-intermediario](https://img.shields.io/badge/release-p0--intermediario-yellow.svg)](https://github.com/andressasouza98/p0-triagem-helpdesk-llm/releases/tag/p0-intermediario)
+[![Release p0-avancado](https://img.shields.io/badge/release-p0--avancado-brightgreen.svg)](https://github.com/andressasouza98/p0-triagem-helpdesk-llm/releases/tag/p0-avancado)
 
-Aplicação utilitária em linha de comando (CLI) desenvolvida em Python para transformar relatos informais de suporte de TI em fichas técnicas operacionais padronizadas. A integração com o modelo de linguagem Google Gemini é realizada diretamente via requisições HTTP REST nativas com a biblioteca `requests`, sem intermediários proprietários, assegurando portabilidade, previsibilidade e resiliência de engenharia.
-
----
-
-## 📌 Índice
-
-1. [Visão Geral e Problema de Negócio](#-visão-geral-e-problema-de-negócio)
-2. [Arquitetura de Software e Modularização](#-arquitetura-de-software-e-modularização)
-3. [Segurança e Gestão de Credenciais](#-segurança-e-gestão-de-credenciais)
-4. [Tratamento Defensivo de Exceções](#-tratamento-defensivo-de-exceções)
-5. [Guia de Instalação e Execução (Quick Start)](#-guia-de-instalação-e-execução-quick-start)
-6. [Exemplo Prático de Execução](#-exemplo-prático-de-execução)
-7. [Matriz de Marcos do Projeto (PBL)](#-matriz-de-marcos-do-projeto-pbl)
+Sistema de triagem inteligente e automação de chamados de suporte técnico de TI utilizando Grandes Modelos de Linguagem (Google Gemini API). O sistema processa descrições livres de incidentes técnicos, extraindo de forma estruturada a categoria do problema, severidade operacional, síntese executiva e recomendações preliminares de resolução.
 
 ---
 
-## 🎯 Visão Geral e Problema de Negócio
+## 🎯 Frase-Problema e Público-Alvo
 
-### Definição Canônica
->
-> *"Profissionais de atendimento de Help Desk N1 frequentemente perdem tempo decifrando relatos livres, confusos e redundantes enviados por colaboradores corporativos. Esta solução automatiza a extração da falha, a classificação da severidade e a sugestão da ação inicial de atendimento antes da abertura formal do ticket."*
-
-### Por que utilizar LLM em vez de regras estáticas (Regex / `if-else`)?
-
-* **Tratamento de Linguagem Informal:** Usuários leigos descrevem a mesma falha física com jargões distintos (*"computador apagou"*, *"luz laranja piscando"*, *"tela preta sem sinal"*).
-* **Interpretação de Criticidade Contextual:** O modelo infere a urgência operacional com base nas regras de negócio (ex.: folha de pagamento bloqueada eleva automaticamente o incidente para severidade Alta ou Crítica).
-* **Síntese Operacional:** O modelo condensa o cerne técnico do problema em uma frase direta e orienta a intervenção física imediata recomendada para o técnico de N1.
+* **Frase-Problema:** Relatos de incidentes em centrais de suporte chegam com redação heterogénea, ambígua ou prolixa, provocando atrasos na classificação manual, roteamento erróneo de chamados e estouro de SLAs operacionais.
+* **Público-Alvo:**
+  * Equipes de suporte técnico N1 e N2 (Service Desk / Helpdesk).
+  * Gestores de operações de TI focados na triagem primária ágil.
+  * Usuários corporativos que demandam encaminhamento imediato e padronizado de incidentes.
 
 ---
 
-## 🏛️ Arquitetura de Software e Modularização
+## 🧠 Justificativa Técnica: LLM vs. Abordagem Determinística Tradicional
 
-O projeto adota o princípio de responsabilidade única (SRP), desacoplando a camada de apresentação da camada de rede e transporte de dados:
+| Critério | Abordagem Determinística (Regex / Regras / Palavras-chave) | Abordagem Generativa com LLM (Google Gemini API) |
+| :--- | :--- | :--- |
+| **Compreensão Semântica** | Rígida; falha diante de erros ortográficos, variações sintáticas, gírias regionais e descrições indiretas. | Profunda; interpreta nuances de linguagem natural, sinonímia e gravidade implícita no contexto. |
+| **Contextualização de Incidentes** | Não relaciona causas concorrentes descritas no mesmo chamado. | Capaz de ponderar causas múltiplas e priorizar o evento de maior impacto ao negócio. |
+| **Manutenibilidade** | Requer criação e manutenção manual contínua de extensas tabelas de termos e regras booleanas. | Adaptável por meio de engenharia de prompt (Zero-Shot / Few-Shot), sem necessidade de retreino de código de parsing. |
+| **Geração de Ação Recomendada** | Limitada a mensagens estáticas previamente cadastradas. | Elabora sínteses dinâmicas e direcionadas com orientações técnicas preliminares contextualizadas. |
+
+---
+
+## 🚧 Limites de Escopo da Entrega
+
+### O que o sistema cobre
+
+* Recepção de relatos textuais livres via interface interativa de linha de comando (CLI).
+* Integração direta e parametrizada com o endpoint REST da API Google Gemini (`gemini-3.5-flash-lite`).
+* Extração padronizada de quatro entidades obrigatórias: **Categoria**, **Severidade Sugerida**, **Síntese da Falha** e **Ação Recomendada**.
+* Observabilidade técnica segura (logging em `logs/app.log`) sem persistência de dados sensíveis ou pessoais (Conformidade com a LGPD).
+* Testes unitários determinísticos cobrindo cenários de sucesso, erro de autenticação (HTTP 401) e timeout de rede sem chamadas externas.
+
+### O que não está no escopo
+
+* Persistência de tickets em banco de dados relacional ou noSQL.
+* Roteamento e criação automatizada de chamados em plataformas de Service Desk (ex.: Jira Service Management, ServiceNow, Zendesk).
+* Aplicação automatizada de scripts de correção no sistema operacional do usuário final.
+* Recuperação de informações sobre bases documentais internas proprietárias (RAG - *Retrieval-Augmented Generation*).
+
+---
+
+## 🏛️ Arquitetura Modular e Estrutura de Pastas
+
+O projeto adota uma divisão modular que isola a interface de usuário, as regras de comunicação HTTP e os testes automatizados, utilizando `pathlib` para garantir resolução de caminhos agnóstica de sistema operacional (compatível com Linux, macOS e Windows).
 
 ```text
 p0-triagem-helpdesk-llm/
 │
-├── .vscode/               # Diretório de configurações locais de desenvolvimento
-├── logs/                  # Diretório reservado para telemetria operacional
-│   └── .gitkeep
+├── logs/                      # Armazenamento de logs gerados em tempo de execução
+│   └── app.log                # Registro técnico operacional em conformidade com LGPD
 │
-├── src/                   # Código-fonte da aplicação
-│   ├── __init__.py
-│   ├── app.py             # Interface CLI, validação defensiva e formatação
-│   └── client.py          # Camada de integração: HTTP REST, parâmetros e resiliência
+├── src/                       # Módulos principais da aplicação
+│   ├── __init__.py            # Inicializador de pacote Python
+│   ├── app.py                 # Interface de linha de comando (CLI) e orquestração do fluxo
+│   └── client.py              # Cliente HTTP com requests, carregamento de .env e logging
 │
-├── tests/                 # Estrutura modular reservada para suíte de testes unitários
-├── .env.example           # Contrato público das variáveis de ambiente necessárias
-├── .gitignore             # Bloqueio estrito de segredos (.env) e arquivos temporários
-├── README.md              # Documentação técnica integral da aplicação
-└── requirements.txt       # Dependências estritas e reproduzíveis do projeto
+├── tests/                     # Bateria de testes automatizados
+│   ├── __init__.py            # Inicializador do pacote de testes
+│   └── test_client.py         # Testes unitários com requests-mock e isolamento de rede
+│
+├── .env                       # Variáveis de ambiente locais (ignorado no versionamento)
+├── .env.example               # Modelo de referência das variáveis de ambiente exigidas
+├── .gitignore                 # Arquivos e pastas excluídos do controle de versão
+├── pytest.ini                 # Configuração do executor de testes pytest (pythonpath e logs)
+├── README.md                  # Documentação completa de engenharia e reprodução
+└── requirements.txt           # Dependências externas do projeto com versões fixadas
 ```
 
-### Divisão de Responsabilidades
+---
 
-| Componente | Responsabilidade Principal | Mecanismos Implementados |
-| :--- | :--- | :--- |
-| **`src/app.py`** | Apresentação e Interação com Usuário | Entrada e saída via CLI; validação defensiva (tamanho mínimo $\ge 10$ caracteres); bloqueio preventivo de strings vazias; captura graciosa de `KeyboardInterrupt` (`Ctrl + C`); *lazy import* defensivo de `src.client`. |
-| **`src/client.py`** | Integração e Comunicação HTTP | • Resolução de caminhos agnósticos via `pathlib.Path`.<br>• Autenticação segura pelo cabeçalho `x-goog-api-key`.<br>• Injeção de parâmetros (`maxOutputTokens`, `temperature`).<br>• Timeouts explícitos configurados.<br>• Tratamento granular de códigos HTTP e exceções de rede. |
+## 🚀 Guia Quick Start Passo a Passo
+
+### Pré-requisitos
+
+* Interpretador **Python 3.10+** instalado (validado na versão Python 3.12.3).
+* Gerenciador de versão **Git** configurado.
+* Chave de API ativa do **Google AI Studio** ([Obtenha sua chave aqui](https://aistudio.google.com/)).
 
 ---
 
-## 🔒 Segurança e Gestão de Credenciais
-
-* **Isolamento de Segredos:** A chave de API nunca é gravada no código nem adicionada ao Git. O arquivo `.env` é protegido pelo `.gitignore`.
-* **Contrato de Ambiente:** O repositório fornece o arquivo `.env.example` higienizado com os padrões funcionais do serviço.
-* **Autenticação em Cabeçalho:** A chave trafega estritamente via header HTTP `x-goog-api-key`, evitando exposição em logs de URL, proxies corporativos ou histórico de roteamento.
-
----
-
-## 🛡️ Tratamento Defensivo de Exceções
-
-O módulo de integração foi desenhado com barreiras de contenção que evitam a propagação de *tracebacks* brutos para o terminal do usuário:
-
-* **Validação de Configuração:** Valida tipos numéricos e intervalos para `LLM_MAX_TOKENS`, `LLM_TEMPERATURE` e `LLM_TIMEOUT`.
-* **Timeout Explícito:** Interrupção controlada de requisições que excedam o limite estabelecido (padrão: 30s), exibindo mensagem em português.
-* **Falhas de Conectividade:** Captura cirúrgica de `requests.exceptions.ConnectionError` e `requests.exceptions.Timeout`.
-* **Diagnóstico Semântico de Erros HTTP:** Tratamento com retornos orientativos para respostas:
-  * `400`: Parâmetros ou payload malformatado.
-  * `401`: Chave de API inválida, ausente ou expirada.
-  * `403`: Restrição de permissão de acesso ao modelo ou projeto.
-  * `404`: Modelo ou versão de endpoint não localizada.
-  * `429`: Limite de cota de requisições excedido.
-  * `>= 500`: Instabilidade temporária dos servidores externos.
-
----
-
-## 🚀 Guia de Instalação e Execução (Quick Start)
-
-### 1. Clonar o Repositório
+### 1. Clonagem do Repositório
 
 ```bash
-git clone https://github.com/andressasouza98/p0-triagem-helpdesk-llm.git
+git clone [https://github.com/andressasouza98/p0-triagem-helpdesk-llm.git](https://github.com/andressasouza98/p0-triagem-helpdesk-llm.git)
 cd p0-triagem-helpdesk-llm
 ```
 
-### 2. Configurar o Ambiente Virtual Isolado (`.venv`)
+---
+
+### 2. Criação e Ativação do Ambiente Virtual (`.venv`)
 
 * **No Windows (Git Bash):**
 
@@ -117,84 +115,148 @@ cd p0-triagem-helpdesk-llm
   .\.venv\Scripts\Activate.ps1
   ```
 
-* **No Linux / macOS:**
+* **No Linux / macOS (Bash ou Zsh):**
 
   ```bash
   python3 -m venv .venv
   source .venv/bin/activate
   ```
 
-### 3. Instalar as Dependências Estritas
+---
+
+### 3. Instalação das Dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configurar as Variáveis de Ambiente
+---
 
-Copie o template modelo para criar seu arquivo de execução local:
+### 4. Configuração das Variáveis de Ambiente
+
+Copie o arquivo de exemplo para gerar seu arquivo de configuração local:
 
 ```bash
 cp .env.example .env
 ```
 
-Edite o arquivo `.env` gerado e preencha a sua credencial emitida pelo Google AI Studio:
+Abra o arquivo `.env` gerado e preencha a sua credencial:
 
 ```env
-LLM_API_KEY=coloque_aqui_sua_chave_real
+# ==============================================================================
+# CREDENCIAIS DE ACESSO
+# ==============================================================================
+LLM_API_KEY=sua_chave_real_aqui
+
+# ==============================================================================
+# ENDPOINT E MODELO
+# ==============================================================================
 LLM_MODEL_NAME=gemini-3.5-flash-lite
 LLM_API_VERSION=v1beta
+
+# ==============================================================================
+# PARÂMETROS DE INFERÊNCIA E RESILIÊNCIA
+# ==============================================================================
 LLM_MAX_TOKENS=500
 LLM_TEMPERATURE=0.2
 LLM_TIMEOUT=30
 ```
 
-### 5. Executar a Aplicação
+| Variável | Descrição Técnica | Valor Padrão |
+| :--- | :--- | :--- |
+| `LLM_API_KEY` | Chave de autenticação gerada no Google AI Studio. | `Obrigatória` |
+| `LLM_MODEL_NAME` | Identificador do modelo de linguagem utilizado. | `gemini-3.5-flash-lite` |
+| `LLM_API_VERSION` | Versão da API REST do Google Generative Language. | `v1beta` |
+| `LLM_MAX_TOKENS` | Limite máximo de tokens gerados na resposta. | `500` |
+| `LLM_TEMPERATURE` | Grau de aleatoriedade da amostragem (baixo para manter determinismo). | `0.2` |
+| `LLM_TIMEOUT` | Tempo limite em segundos para requisições de rede HTTP. | `30` |
 
-Inicie a CLI a partir da raiz do repositório:
+---
+
+## 💻 Instruções de Execução
+
+### Execução da Aplicação Interativa (CLI)
+
+Com o ambiente virtual ativado, execute o módulo `src.app`:
 
 ```bash
 python -m src.app
 ```
 
----
-
-## 💻 Exemplo Prático de Execução
-
-### Entrada Fornecida via Terminal
+**Exemplo de Execução no Terminal:**
 
 ```text
-Olá suporte, preciso de ajuda com urgência. Cheguei hoje de manhã no setor financeiro e meu computador liga, as luzes acendem, mas o monitor fica piscando uma luz laranja e a tela fica preta sem sinal de imagem nenhum. Já tentei mexer nos cabos pretos atrás dele e nada. Não consigo abrir o faturamento e temos folhas de pagamento para emitir hoje até as 12h!
-```
+Informe o relato do chamado de suporte:
+> A impressora térmica do setor de expedição parou de imprimir as etiquetas de envio.
 
-### Saída Estruturada Retornada
+Processando chamado com inteligência artificial... Aguarde...
 
-```text
-==========================================================
-                  RESULTADO DA TRIAGEM                    
-==========================================================
+==================================================
+              RESULTADO DA TRIAGEM
+==================================================
 
 CATEGORIA:
 Hardware
 
 SEVERIDADE SUGERIDA:
-Alta
+Média
 
 SÍNTESE DA FALHA:
-Computador inicializa normalmente, porém o monitor permanece sem sinal de vídeo apresentando tela preta e LED laranja piscando.
+Parada funcional da impressora térmica no setor de expedição, impedindo a emissão de etiquetas de envio.
 
 AÇÃO RECOMENDADA:
-Inspecionar a integridade e conexão física dos cabos de vídeo (HDMI/DisplayPort), testar o display em outra estação de trabalho e verificar a fonte de alimentação do monitor.
+Verificar a conexão física dos cabos de energia e USB/rede, checar o status da fila de impressão no sistema operacional e confirmar se há erro de atolamento de papel ou falta de suprimento (ribbon/etiquetas) no equipamento.
 
-==========================================================
+==================================================
 ```
 
 ---
 
-## 📊 Matriz de Marcos do Projeto (PBL)
+### Execução da Suíte de Testes Offline
 
-| Nível do Marco | Tag Oficial | Status | Principais Evidências Entregues |
-| :--- | :--- | :---: | :--- |
-| **Básico** | `p0-basico` | *Concluído* | Fluxo CLI funcional ponta a ponta, integração REST pura sem SDKs e isolamento em ambiente virtual `.venv`. |
-| **Intermediário** | `p0-intermediario` | *Concluído* | Desacoplamento entre `app.py` e `client.py`, validações defensivas de entrada, parametrização dinâmica de geração (`temperature`), contenção total de *tracebacks* e fluxo Git com PR via *Squash and Merge*. |
-| **Avançado** | `p0-avancado` | *Planejado* | Telemetria e logging estruturado com conformidade à LGPD (`logs/app.log`), detecção de respostas truncadas (`finishReason`) e suíte de testes unitários offline com `pytest` e `requests-mock`. |
+A suíte de testes unitários foi construída utilizando `pytest` e `requests-mock`, garantindo validação determinística sem requisições reais de rede e sem consumir saldo da API:
+
+```bash
+pytest -v
+```
+
+**Saída esperada:**
+
+```text
+tests/test_client.py::test_chamada_sucesso PASSED                        [ 33%]
+tests/test_client.py::test_erro_autenticacao_401 PASSED                  [ 66%]
+tests/test_client.py::test_timeout_conexao PASSED                        [100%]
+
+============================== 3 passed in 0.32s ==============================
+```
+
+---
+
+## 🔒 Observabilidade e Conformidade LGPD
+
+O sistema implementa rastreabilidade técnica estruturada sem violar a privacidade dos dados:
+
+* **Arquivo gerado:** `logs/app.log` (pasta e arquivo criados via `pathlib.Path`).
+* **Dados gravados:** Exclusivamente metadados técnicos operacionais (*timestamp ISO 8601 em UTC, código de status HTTP, latência da chamada em ms, total de caracteres do prompt, modelo utilizado e finish_reason*).
+* **Proteção à Privacidade (LGPD):** Nenhum dado pessoal, nome de usuário, endereço IP corporativo, chave de API ou texto original do relato é gravado no disco.
+
+**Exemplo de linha de log gerada:**
+
+```text
+2026-11-09T18:58:18Z | INFO | status=200 | latency_ms=1899ms | prompt_chars=1144 | model=gemini-3.5-flash-lite | finish_reason=STOP
+```
+
+---
+
+## ⚠️ Limitações Conhecidas do Modelo
+
+1. **Dependência de Conectividade:** A execução requer conexão estável com a internet para alcançar os servidores da Google Generative Language API.
+2. **Quotas de Rate Limit:** O uso em planos gratuitos está sujeito a limites de requisições por minuto (RPM) e dia (RPD), podendo gerar erros HTTP 429 em chamadas consecutivas.
+3. **Stateless (Sem Memória de Conversação):** O modelo processa cada incidente de forma isolada, não mantendo contexto acumulado entre diferentes execuções.
+4. **Alucinação Residual em Cenários Específicos:** Na ausência de manuais proprietários indexados por RAG, o modelo utiliza conhecimento geral pré-treinado, podendo sugerir procedimentos que não correspondam à infraestrutura particular da organização.
+
+---
+
+## 📺 Vídeo de Demonstração
+
+* **Link da Apresentação Técnica:** `[INSERIR_LINK_DO_VIDEO_AQUI]`
